@@ -10,36 +10,6 @@ import copy
 import json 
 import openpyxl
 
-# --- IMPORTATIONS DES LIBRAIRIES TIERCES (AUDIO) ---
-try:
-    from audiorecorder import audiorecorder
-    import speech_recognition as sr
-    from pydub import AudioSegment
-    
-    # MODIFIÉ: Tentative de chemins plus génériques
-    try:
-        ffmpeg_path = "ffmpeg"
-        ffprobe_path = "ffprobe"
-        AudioSegment.converter = ffmpeg_path
-        AudioSegment.ffprobe = ffprobe_path
-        empty_audio = AudioSegment.silent(duration=0)
-        empty_audio.export(io.BytesIO(), format="wav")
-    except Exception:
-        # Si 'ffmpeg' n'est pas dans le PATH, tente le chemin anaconda
-        ffmpeg_path = "/Applications/anaconda3/bin/ffmpeg"
-        ffprobe_path = "/Applications/anaconda3/bin/ffprobe"
-        AudioSegment.converter = ffmpeg_path
-        AudioSegment.ffprobe = ffprobe_path
-        empty_audio = AudioSegment.silent(duration=0)
-        empty_audio.export(io.BytesIO(), format="wav")
-except ImportError:
-    st.error("Dépendances manquantes (audiorecorder, speech_recognition, pydub).")
-    st.stop()
-except Exception as e:
-    if "ffmpeg" in str(e).lower() or "ffprobe" in str(e).lower():
-         st.error(f"ERREUR FFMPEG : {e}. Assurez-vous que FFMPEG est installé et accessible (dans votre PATH ou via le chemin dans app.py).")
-         st.stop()
-
 # --- IMPORTATIONS DE VOS MODULES PERSONNALISÉS ---
 from utils import (
     initialize_session_state, 
@@ -712,33 +682,7 @@ with col1:
                     )
             # --- FIN MODIFICATION ÉTAGÈRE UI ---
 
-            # --- Commande vocale ---
-            st.markdown("---")
-            st.markdown("🎤 **Commande Vocale (pour Caisson SÉLECTIONNÉ)**")
-            audio_data = audiorecorder("Enregistrer", "Transcrire...", key=st.session_state.audio_recorder_key)
-            if len(audio_data) > 0:
-                try:
-                    wav_io = io.BytesIO()
-                    audio_data.export(wav_io, format="wav")
-                    r = sr.Recognizer()
-                    with sr.AudioFile(wav_io) as source: audio = r.record(source)
-                    voice_command = r.recognize_google(audio, language="fr-FR")
-                    st.info(f"Transc.: {voice_command}")
-                    unit_factor = {"mm":0.001,"cm":0.01,"m":1.0}[unit]
-                    parsed_result, error = parse_all_voice_commands(voice_command, unit_factor)
-                    if parsed_result:
-                        apply_voice_command(parsed_result) 
-                        st.success("✅ Cotes appliquées au caisson sélectionné.")
-                        st.rerun() 
-                    else:
-                        st.error(f"❌ Commande non comprise: {error}")
-                except Exception as e:
-                    st.error(f"Erreur audio: {e}")
-                finally:
-                    idx = int(st.session_state.audio_recorder_key.split('_')[-1])
-                    st.session_state.audio_recorder_key = f'audio_key_{idx+1}'
-                    st.rerun()
-
+        
             # --- Éditeur de Chants ---
             st.markdown("---")
             st.markdown(f"**Feuille de débit (pour Caisson {st.session_state.selected_cabinet_index})**")
