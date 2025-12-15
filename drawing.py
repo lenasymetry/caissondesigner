@@ -1,11 +1,11 @@
 # Contenu de drawing.py
-import streamlit as st 
+import streamlit as st
 import plotly.graph_objects as go
 import numpy as np
 import re
-import base64 
-import os      
-import io      
+import base64
+import os
+import io
 
 try:
     from PIL import Image
@@ -21,7 +21,6 @@ if 'Image' in locals():
         
         if not os.path.exists(filepath):
             # N'affiche plus d'erreur, retourne juste None silencieusement
-            # st.error(f"Logo introuvable ! L'application cherche ici : {abs_path}")
             return None
         try:
             img = Image.open(filepath)
@@ -40,7 +39,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
                                      face_holes_list=[], 
                                      tranche_longue_holes_list=[],
                                      tranche_cote_holes_list=[],
-                                     center_cutout_props=None # --- ARGUMENT MODIFIÉ ---
+                                     center_cutout_props=None
                                      ):
     """
     Dessine une feuille d'usinage 2D avec cotation complète
@@ -86,7 +85,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
         x0 = (L - cut_W) / 2
         x1 = x0 + cut_W
         y1 = W - cut_offset # Haut de la découpe
-        y0 = y1 - cut_H     # Bas de la découpe
+        y0 = y1 - cut_H      # Bas de la découpe
         
         # Dessine le rectangle en pointillé
         fig.add_shape(type="rect",
@@ -149,7 +148,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
             fig.add_annotation(x=x_pos, y=y_dim_X_holes - text_offset, text=f"{x_pos:.2f}", showarrow=False, font=dict(color=dim_line_color, size=10))
             x_level += 1
 
-    # --- 4. Dessin des Tranches ---
+    # --- 4. Dessin des Tranches (fillpattern SUPPRIMÉ) ---
     tranche_longue_bas_y0 = -dim_offset_global
     tranche_longue_bas_y1 = tranche_longue_bas_y0 - tranche_visual_thickness
     fig.add_trace(go.Scatter(
@@ -157,7 +156,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
         y=[tranche_longue_bas_y0, tranche_longue_bas_y0, tranche_longue_bas_y1, tranche_longue_bas_y1, tranche_longue_bas_y0],
         fill="toself", fillcolor="#f0f0f0",
         line=dict(color=line_color, width=line_width),
-        fillpattern=dict(shape=hatch_pattern if chants.get("Chant Avant") else "", fgcolor=dim_line_color, solidity=0.5),
+        # fillpattern SUPPRIMÉ
         hoverinfo="none", showlegend=False, mode='lines'
     ))
     cote_T_bas_x = L + margin*0.1
@@ -173,7 +172,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
         y=[tranche_longue_haut_y0, tranche_longue_haut_y0, tranche_longue_haut_y1, tranche_longue_haut_y1, tranche_longue_haut_y0],
         fill="toself", fillcolor="#f0f0f0",
         line=dict(color=line_color, width=line_width),
-        fillpattern=dict(shape=hatch_pattern if chants.get("Chant Arrière") else "", fgcolor=dim_line_color, solidity=0.5),
+        # fillpattern SUPPRIMÉ
         hoverinfo="none", showlegend=False, mode='lines'
     ))
     cote_T_haut_x = L + margin*0.1
@@ -189,7 +188,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
         y=[0, 0, W, W, 0],
         fill="toself", fillcolor="#f0f0f0",
         line=dict(color=line_color, width=line_width),
-        fillpattern=dict(shape=hatch_pattern if chants.get("Chant Gauche") else "", fgcolor=dim_line_color, solidity=0.5),
+        # fillpattern SUPPRIMÉ
         hoverinfo="none", showlegend=False, mode='lines'
     ))
     cote_T_gauche_y = W + margin*0.1
@@ -205,7 +204,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
         y=[0, 0, W, W, 0],
         fill="toself", fillcolor="#f0f0f0",
         line=dict(color=line_color, width=line_width),
-        fillpattern=dict(shape=hatch_pattern if chants.get("Chant Droit") else "", fgcolor=dim_line_color, solidity=0.5),
+        # fillpattern SUPPRIMÉ
         hoverinfo="none", showlegend=False, mode='lines'
     ))
     cote_T_droite_y = W + margin*0.1
@@ -291,15 +290,17 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
 
 
     # --- 6. Dessin des Trous (Visuels) ---
-    annotated_hole_types = set()
+    annotated_face_hole_types = set() 
+    annotated_tranche_hole_types = set()
 
     for hole in face_holes_list:
         x_pos, y_pos = hole['x'], hole['y']
         diam_text = hole.get('diam_str', '⌀8' if hole['type'] == 'tourillon' else '⌀3')
-        hole_type_key = f"{hole['type']}_{diam_text}"
+        hole_type_key = f"{hole['type']}_{diam_text}" 
 
         try:
-            diam = float(re.findall(r"[\d\.]+", diam_text.split('/')[0])[0])
+            diam_match = re.findall(r"[\d\.]+", diam_text.split('/')[0])
+            diam = float(diam_match[0]) if diam_match else 8.0 # Utilise 8.0 par défaut si non trouvé
             radius = diam / 2.0
         except (ValueError, IndexError):
             radius = 4.0 
@@ -323,7 +324,8 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
             layer="above"
         )
         
-        if hole_type_key not in annotated_hole_types:
+        # Annotation de diamètre unique
+        if hole_type_key not in annotated_face_hole_types:
             fig.add_annotation(
                 x=x_pos, y=y_pos,
                 text=diam_text,
@@ -331,7 +333,7 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
                 showarrow=False,
                 font=dict(size=9, color="#555")
             )
-            annotated_hole_types.add(hole_type_key)
+            annotated_face_hole_types.add(hole_type_key)
 
     # Trous sur les TRANCHES CÔTÉ (Gauche et Droite)
     dowel_tranche_c_g_x, dowel_tranche_c_g_y = [], [] 
@@ -348,19 +350,23 @@ def draw_machining_view_professional(panel_name, L, W, T, unit_str, project_info
             y_level += 1
 
     for hole in tranche_cote_holes_list:
-        if hole['type'] == 'tourillon':
+        if hole['type'] == 'tourillon' or hole['type'] == 'vis':
             y_pos = hole['y']
             x_pos_g = tranche_cote_g_x0 - visual_hole_center_offset
+            x_pos_d = tranche_cote_d_x0 + visual_hole_center_offset
+            diam_text = hole.get('diam_str', "⌀8")
+            hole_type_key = f"tranche_{hole['type']}_{diam_text}"
+            
+            # --- Dessin de l'indication de trou sur la tranche ---
             dowel_tranche_c_g_x.append(x_pos_g)
             dowel_tranche_c_g_y.append(y_pos)
-            x_pos_d = tranche_cote_d_x0 + visual_hole_center_offset
             dowel_tranche_c_d_x.append(x_pos_d)
             dowel_tranche_c_d_y.append(y_pos)
-            diam_text = hole.get('diam_str', "⌀8")
-            hole_type_key = f"tranche_{diam_text}"
-            if hole_type_key not in annotated_hole_types:
+            
+            # --- Annotation de diamètre unique pour la tranche ---
+            if hole_type_key not in annotated_tranche_hole_types:
                 fig.add_annotation(x=x_pos_g, y=y_pos, text=diam_text, xshift=-10, yshift=10, showarrow=False, font=dict(size=9))
-                annotated_hole_types.add(hole_type_key)
+                annotated_tranche_hole_types.add(hole_type_key)
 
     if dowel_tranche_c_g_x:
         fig.add_trace(go.Scatter(x=dowel_tranche_c_g_x, y=dowel_tranche_c_g_y, mode='markers',
