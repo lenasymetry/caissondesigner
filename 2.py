@@ -1,4 +1,4 @@
-# Contenu de app.py
+# Contenu de app.py (2.py)
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
@@ -110,13 +110,32 @@ def calculate_all_project_parts():
             for s_idx, s in enumerate(cabinet['shelves']):
                 cav, car, cg, cd = get_automatic_edge_banding("Etagère")
                 depth_base = dims['W_raw'] - 10.0
-                if s.get('shelf_type') == 'mobile':
+                
+                s_type = s.get('shelf_type', 'mobile')
+                
+                if s_type == 'mobile':
                     len_val = (dims['L_raw'] - 2*t_lr) - 1.0; wid_val = depth_base; usi = ""
                 else:
                     len_val = (dims['L_raw'] - 2*t_lr); wid_val = depth_base; usi = "CF plan"
+                
                 shelf_key = f"C{i}_S{s_idx}"
                 shelf_dims_cache[shelf_key] = (len_val, wid_val)
-                all_parts.append({"Lettre": f"C{i}-E{s_idx+1}", "Référence Pièce": f"Etagère {s_idx+1} ({s['shelf_type']})", "Matière": s.get('material', 'Matière Etagère'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": len_val, "Largeur (mm)": wid_val, "Epaisseur": s['thickness'], "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": usi})
+                
+                all_parts.append({
+                    "Lettre": f"C{i}-E{s_idx+1}", 
+                    "Référence Pièce": f"Etagère {s_idx+1} ({s_type})", 
+                    "Matière": s.get('material', 'Matière Etagère'), 
+                    "Caisson": f"C{i}", 
+                    "Qté": 1, 
+                    "Longueur (mm)": len_val, 
+                    "Largeur (mm)": wid_val, 
+                    "Epaisseur": s['thickness'], 
+                    "Chant Avant": cav, 
+                    "Chant Arrière": car, 
+                    "Chant Gauche": cg, 
+                    "Chant Droit": cd, 
+                    "Usinage": usi
+                })
                 
     return all_parts, shelf_dims_cache
 
@@ -228,12 +247,14 @@ with col1:
                     st.button("Ajouter une étagère au Caisson", key=f"add_shelf_{idx}", on_click=add_shelf_callback)
                     if 'shelves' in selected_cab:
                         for i, s in enumerate(selected_cab['shelves']):
-                            with st.expander(f"⚙️ Étagère {i+1} ({'Mobile' if s.get('shelf_type')=='mobile' else 'Fixe'})"):
-                                st.selectbox("Type", options=['mobile', 'fixe'], index=0 if s.get('shelf_type')=='mobile' else 1, format_func=lambda x: 'Mobile (Taquets)' if x=='mobile' else 'Fixe', key=f"shelf_t_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'shelf_type'))
+                            # SÉCURITÉ ICI : .get
+                            s_type = s.get('shelf_type', 'mobile')
+                            with st.expander(f"⚙️ Étagère {i+1} ({'Mobile' if s_type=='mobile' else 'Fixe'})"):
+                                st.selectbox("Type", options=['mobile', 'fixe'], index=0 if s_type=='mobile' else 1, format_func=lambda x: 'Mobile (Taquets)' if x=='mobile' else 'Fixe', key=f"shelf_t_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'shelf_type'))
                                 st.number_input("Position Y (mm)", value=s['height'], key=f"shelf_h_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'height'), format="%.0f", step=1.0)
                                 st.number_input("Épaisseur (mm)", value=s['thickness'], key=f"shelf_e_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'thickness'), format="%.0f", step=1.0)
                                 st.text_input("Matière", value=s.get('material', 'Matière Étagère'), key=f"shelf_m_{idx}_{i}", on_change=lambda x=i: update_shelf_material(x, 'material'))
-                                if s.get('shelf_type') == 'mobile':
+                                if s_type == 'mobile':
                                     st.selectbox("Motif Trous", options=['full_height', '5_holes_centered', 'custom_n_m'], index=['full_height', '5_holes_centered', 'custom_n_m'].index(s.get('mobile_machining_type', 'full_height')), format_func=lambda x: {'full_height':'Toute hauteur', '5_holes_centered':'5 Trous Centrés', 'custom_n_m':'Personnalisé'}.get(x, x), key=f"shelf_m_type_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'mobile_machining_type'))
                                     if s.get('mobile_machining_type') == 'custom_n_m':
                                         st.number_input("Trous au-dessus (N)", value=s.get('custom_holes_above', 0), key=f"shelf_c_above_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'custom_holes_above'), step=1)
@@ -272,7 +293,9 @@ with col2:
         
         if 'shelves' in selected_cab:
             for s in selected_cab['shelves']:
-                if s.get('shelf_type') == 'fixe':
+                # SÉCURITÉ ICI : .get
+                s_type = s.get('shelf_type', 'mobile')
+                if s_type == 'fixe':
                     yc_val = t_tb + s['height'] + s['thickness']/2.0 
                     check_holes_mg.append({'y': yc_val, 'x':0, 'source': 'shelf_fixe'})
                 else:
@@ -316,7 +339,9 @@ with col2:
                     
                     # Calcul de la hauteur du pattern
                     pattern_height = 32.0 
-                    if shelf.get('shelf_type') == 'mobile':
+                    # SÉCURITÉ ICI
+                    s_type = shelf.get('shelf_type', 'mobile')
+                    if s_type == 'mobile':
                         m_type = shelf.get('mobile_machining_type', 'full_height')
                         if m_type == '5_holes_centered':
                             pattern_height = 128.0 # 4 entraxes de 32
@@ -348,7 +373,11 @@ with col2:
     unit_factor = {"mm":0.001,"cm":0.01,"m":1.0}[st.session_state.unit_select]
     abs_origins = calculate_origins_recursively(st.session_state.scene_cabinets, unit_factor)
     
-    BEIGE_COLOR = "#E6D9BD" 
+    # COULEURS 3D (Beige Bois & Contraste)
+    BODY_COLOR = "#D6C098"      # Bois Clair
+    ACCESSORY_COLOR = "#B8A078" # Beige plus foncé (Portes/Tiroirs)
+    BODY_OPACITY = 1.0          # Opaque
+    ACCESSORY_OPACITY = 1.0     # Opaque
     
     if not st.session_state['scene_cabinets']:
         st.info("La scène est vide.")
@@ -357,12 +386,14 @@ with col2:
             o = abs_origins[i]; d = cab['dims']; L, W, H = d['L_raw']*unit_factor, d['W_raw']*unit_factor, d['H_raw']*unit_factor
             tl, tb, tt = d['t_lr_raw']*unit_factor, d['t_fb_raw']*unit_factor, d['t_tb_raw']*unit_factor
             
-            fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]), color=BEIGE_COLOR, showlegend=False))
-            fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]+H-tt), color=BEIGE_COLOR, showlegend=False))
-            fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0], o[1], o[2]), color=BEIGE_COLOR, showlegend=False))
-            fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0]+L-tl, o[1], o[2]), color=BEIGE_COLOR, showlegend=False))
-            fig3d.add_trace(cuboid_mesh_for(L-2*tl, tb, H-2*tt, (o[0]+tl, o[1]+W-tb, o[2]+tt), color=BEIGE_COLOR, showlegend=False))
+            # Corps
+            fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
+            fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]+H-tt), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
+            fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0], o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
+            fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0]+L-tl, o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
+            fig3d.add_trace(cuboid_mesh_for(L-2*tl, tb, H-2*tt, (o[0]+tl, o[1]+W-tb, o[2]+tt), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             
+            # Porte
             if cab['door_props']['has_door']:
                 dp = cab['door_props']; gap = dp['door_gap'] * unit_factor; thk = dp.get('door_thickness', 19.0) * unit_factor; dy = o[1] - thk
                 dH = H + st.session_state.foot_height*unit_factor - gap if dp.get('door_model')=='floor_length' and (i==0) and st.session_state.has_feet else H - 2*gap
@@ -373,25 +404,26 @@ with col2:
                 if dp.get('door_type') == 'single':
                     pivot_x = o[0] + L - gap if dp.get('door_opening')=='right' else o[0] + gap
                     fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, dH, (o[0]+gap, dy, dz), 
-                                                    color=BEIGE_COLOR, opacity=0.8, name=f"Porte {i}",
+                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte {i}",
                                                     rotation_angle=rot_angle, rotation_axis='z', rotation_pivot=(pivot_x, dy, dz)))
                 else:
                     dl_half = (L-2*gap)/2; pivot_g = o[0] + gap; pivot_d = o[0] + L - gap
                     fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+gap, dy, dz), 
-                                                    color=BEIGE_COLOR, opacity=0.8, name=f"Porte G {i}",
+                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte G {i}",
                                                     rotation_angle=45, rotation_axis='z', rotation_pivot=(pivot_g, dy, dz)))
                     fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+L-gap-dl_half, dy, dz), 
-                                                    color=BEIGE_COLOR, opacity=0.8, name=f"Porte D {i}",
+                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte D {i}",
                                                     rotation_angle=-45, rotation_axis='z', rotation_pivot=(pivot_d, dy, dz)))
 
+            # Tiroir
             if cab['drawer_props']['has_drawer']:
                 drp = cab['drawer_props']; gap = drp['drawer_gap'] * unit_factor; thk = drp.get('drawer_face_thickness', 19.0) * unit_factor
-                fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, drp['drawer_face_H_raw']*unit_factor, (o[0]+gap, o[1]-thk, o[2]+drp['drawer_bottom_offset']*unit_factor), color=BEIGE_COLOR, opacity=0.9, name=f"Tiroir {i}"))
+                fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, drp['drawer_face_H_raw']*unit_factor, (o[0]+gap, o[1]-thk, o[2]+drp['drawer_bottom_offset']*unit_factor), color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Tiroir {i}"))
 
             if 'shelves' in cab:
                 for s in cab['shelves']:
                     sh_z = o[2] + tt + (s['height'] * unit_factor)
-                    fig3d.add_trace(cuboid_mesh_for(L-2*tl, W-0.01, s['thickness']*unit_factor, (o[0]+tl, o[1], sh_z), color=BEIGE_COLOR, showlegend=False))
+                    fig3d.add_trace(cuboid_mesh_for(L-2*tl, W-0.01, s['thickness']*unit_factor, (o[0]+tl, o[1], sh_z), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
 
         if st.session_state.has_feet:
             l_coords = [abs_origins[i][0] for i in range(len(scene))]; min_L = min(l_coords); max_L = max([abs_origins[i][0] + scene[i]['dims']['L_raw']*unit_factor for i in range(len(scene))])
@@ -401,7 +433,17 @@ with col2:
                 for y in [min_W+0.05, max_W-0.05]:
                     fig3d.add_trace(cylinder_mesh_for((x, y, -fh), fh, 0.02, color='#333', showlegend=False))
 
-    fig3d.update_layout(scene=dict(aspectmode='data'), margin=dict(l=0,r=0,t=0,b=0), uirevision='constant') 
+    fig3d.update_layout(
+        scene=dict(
+            aspectmode='data',
+            xaxis=dict(visible=True, showgrid=True, title="X"), 
+            yaxis=dict(visible=True, showgrid=True, title="Y"), 
+            zaxis=dict(visible=True, showgrid=True, title="Z"),
+            camera=dict(eye=dict(x=1.6, y=1.6, z=1.4))
+        ),
+        margin=dict(l=0,r=0,t=0,b=0), 
+        uirevision='constant'
+    ) 
     st.plotly_chart(fig3d, use_container_width=True)
     
     st.markdown("---")
@@ -454,7 +496,9 @@ with col2:
         
         if 'shelves' in cab:
             for s_idx, s in enumerate(cab['shelves']):
-                if s.get('shelf_type') == 'fixe':
+                # SÉCURITÉ ICI : .get
+                s_type = s.get('shelf_type', 'mobile')
+                if s_type == 'fixe':
                     yc_val = t_tb + s['height'] + s['thickness']/2.0 
                     
                     for x in ys_vis_sf: holes_mg.append({'type':'vis','x':x+10.0,'y':yc_val,'diam_str':"⌀3"})
@@ -519,8 +563,14 @@ with col2:
             for s_idx, s in enumerate(cab['shelves']):
                 c_eta = {"Chant Avant":True, "Chant Arrière":False, "Chant Gauche":False, "Chant Droit":False}
                 sl, sw = shelf_dims_cache.get(f"C{sel_idx}_S{s_idx}", (100,100))
-                trh = fixed_shelf_tr_draw.get(s_idx, []) if s.get('shelf_type')=='fixe' else []
-                st.plotly_chart(draw_machining_view_pro_final(f"Etagère {s_idx+1} ({s['shelf_type']})", sl, sw, s['thickness'], unit_str, proj, c_eta, [], [], trh), use_container_width=True)
+                
+                # SÉCURITÉ ICI : .get
+                s_type = s.get('shelf_type', 'mobile')
+                
+                trh = fixed_shelf_tr_draw.get(s_idx, []) if s_type == 'fixe' else []
+                
+                st.plotly_chart(draw_machining_view_pro_final(f"Etagère {s_idx+1} ({s_type})", sl, sw, s['thickness'], unit_str, proj, c_eta, [], [], trh), use_container_width=True)
 
     else:
         st.info("Créez un caisson pour voir les plans.")
+        
