@@ -6,7 +6,7 @@ from utils import calculate_hole_positions
 from machining_logic import calculate_back_panel_holes, get_hinge_y_positions, get_mobile_shelf_holes
 from drawing_interface import draw_machining_view_pro_final
 
-# --- FONCTION HELPER LOCALE POUR LES CHANTS (MÊME QUE DANS APP.PY) ---
+# --- FONCTION HELPER LOCALE POUR LES CHANTS ---
 def get_automatic_edge_banding_export(part_name):
     name = part_name.lower()
     if "etagère" in name or "etagere" in name: return True, False, False, False
@@ -17,9 +17,21 @@ def get_automatic_edge_banding_export(part_name):
     else: return True, True, True, True
 
 def generate_stacked_html_plans(cabinets_to_process, indices_to_process):
+    # CSS amélioré pour l'impression
     full_html = "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Dossier Technique</title>"
     full_html += '<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>'
-    full_html += """<style>body { margin: 0; padding: 0; background-color: #525659; font-family: Arial, sans-serif; } .banner { background: #333; color: white; padding: 10px; text-align: center; } .sheet { background: white; width: 297mm; height: 210mm; margin: 20px auto; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: 0 0 10px rgba(0,0,0,0.5); position: relative; } @media print { @page { size: A4 landscape; margin: 0; } body { background: white; } .banner { display: none; } .sheet { width: 100vw; height: 100vh; margin: 0; box-shadow: none; page-break-after: always; } .sheet:last-child { page-break-after: avoid; } }</style>"""
+    full_html += """<style>
+        body { margin: 0; padding: 0; background-color: #525659; font-family: Arial, sans-serif; } 
+        .banner { background: #333; color: white; padding: 10px; text-align: center; } 
+        .sheet { background: white; width: 297mm; height: 210mm; margin: 20px auto; display: flex; flex-direction: column; justify-content: center; align-items: center; box-shadow: 0 0 10px rgba(0,0,0,0.5); position: relative; page-break-inside: avoid; } 
+        @media print { 
+            @page { size: A4 landscape; margin: 0; } 
+            body { background: white; } 
+            .banner { display: none; } 
+            .sheet { width: 100vw; height: 100vh; margin: 0; box-shadow: none; page-break-after: always; } 
+            .sheet:last-child { page-break-after: avoid; } 
+        }
+    </style>"""
     full_html += '</head><body>'
     full_html += f'<div class="banner"><h1>Dossier : {st.session_state.project_name}</h1><p>Pour PDF : Clic Droit > Imprimer > Enregistrer au format PDF (Paysage, Sans marges)</p></div>'
     
@@ -30,7 +42,7 @@ def generate_stacked_html_plans(cabinets_to_process, indices_to_process):
             cab_idx = indices_to_process[i]
             dims, debit_data = cab['dims'], cab['debit_data']
             
-            # --- CALCULS IDENTIQUES À APP.PY ---
+            # --- CALCULS ---
             L_raw, W_raw, H_raw = dims['L_raw'], dims['W_raw'], dims['H_raw']
             t_lr, t_fb, t_tb = dims['t_lr_raw'], dims['t_fb_raw'], dims['t_tb_raw']
             
@@ -58,7 +70,10 @@ def generate_stacked_html_plans(cabinets_to_process, indices_to_process):
             fixed_shelf_tranche_draw = {}
             if 'shelves' in cab:
                 for s_idx, shelf in enumerate(cab['shelves']):
-                    if shelf.get('shelf_type') == 'fixe':
+                    # CORRECTION : Récupération sécurisée du type (évite le crash)
+                    s_type = shelf.get('shelf_type', 'mobile')
+                    
+                    if s_type == 'fixe':
                         y_c = t_tb + shelf['height'] + shelf['thickness']/2.0
                         for x in ys_vis_shelf_fixe: holes_mg.append({'type': 'vis', 'x': x+10.0, 'y': y_c, 'diam_str': "⌀3"})
                         for x in ys_dowel_shelf_fixe: holes_mg.append({'type': 'tourillon', 'x': x+10.0, 'y': y_c, 'diam_str': "⌀8/20"})
@@ -121,7 +136,6 @@ def generate_stacked_html_plans(cabinets_to_process, indices_to_process):
                     for y in y_pos: holes_p.extend([{'type': 'tourillon', 'x': x_cup, 'y': y, 'diam_str': "⌀35"}, {'type': 'vis', 'x': x_dowel, 'y': y-22.5, 'diam_str': "⌀8"}, {'type': 'vis', 'x': x_dowel, 'y': y+22.5, 'diam_str': "⌀8"}])
                     plans.append((f"Porte (C{cab_idx})", door_L, door_H, d_props['door_thickness'], c_porte, holes_p, [], None))
                 else:
-                    # Double porte... (simplifié pour brièveté, logique identique)
                     pass 
 
             # Tiroir
@@ -153,25 +167,28 @@ def generate_stacked_html_plans(cabinets_to_process, indices_to_process):
                 plans.append((f"Tiroir-Dos (C{cab_idx})", d_L_t, d_H_t, 16.0, c_td, d_holes_t, [], None))
                 plans.append((f"Tiroir-Fond (C{cab_idx})", d_L_t, W_raw - (20.0 + t_fb), 8.0, c_td, [], [], None))
 
-            # Étagères
+            # Étagères (Correction crash)
             if 'shelves' in cab:
                  for s_idx, s in enumerate(cab['shelves']):
                     cav_e, car_e, cg_e, cd_e = get_automatic_edge_banding_export("Etagère")
                     c_eta = {"Chant Avant":cav_e, "Chant Arrière":car_e, "Chant Gauche":cg_e, "Chant Droit":cd_e}
-
-                    shelf_len_plot = (dims['L_raw'] - 2*t_lr) - (1.0 if s.get('shelf_type') == 'mobile' else 0.0)
+                    
+                    s_type = s.get('shelf_type', 'mobile') # Sécurisé
+                    shelf_len_plot = (dims['L_raw'] - 2*t_lr) - (1.0 if s_type == 'mobile' else 0.0)
                     shelf_wid_plot = dims['W_raw'] - 10.0
-                    tr_h = fixed_shelf_tranche_draw.get(s_idx, []) if s.get('shelf_type')=='fixe' else []
+                    tr_h = fixed_shelf_tranche_draw.get(s_idx, []) if s_type == 'fixe' else []
 
-                    plans.append((f"Etagère {s_idx+1} ({s['shelf_type']}) (C{cab_idx})", shelf_len_plot, shelf_wid_plot, s['thickness'], c_eta, [], tr_h, None))
+                    plans.append((f"Etagère {s_idx+1} ({s_type}) (C{cab_idx})", shelf_len_plot, shelf_wid_plot, s['thickness'], c_eta, [], tr_h, None))
 
             for title, Lp, Wp, Tp, ch, fh, th, cut in plans:
                 fig = draw_machining_view_pro_final(title, Lp, Wp, Tp, unit_str, proj, ch, fh, [], th, cut)
-                html_fig = fig.to_html(include_plotlyjs=False, full_html=False)
+                # Ajout de include_plotlyjs='cdn' pour assurer le rendu si le script header échoue
+                html_fig = fig.to_html(include_plotlyjs='cdn', full_html=False, default_width='100%', default_height='100%')
                 full_html += f'<div class="sheet">{html_fig}</div>'
         
         full_html += '</body></html>'
         return full_html.encode('utf-8'), True
     except Exception as e:
-        st.error(f"Erreur HTML : {e}")
-        return BytesIO().getvalue(), False
+        # En cas d'erreur, on renvoie ce qu'on a déjà généré pour débogage
+        st.error(f"Erreur Génération HTML : {e}")
+        return full_html.encode('utf-8'), False
