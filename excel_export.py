@@ -1,179 +1,404 @@
-# Contenu de excel_export.py
 import io
 import pandas as pd
 import openpyxl
-import json # Importé pour la sauvegarde
+import json
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from openpyxl.utils import get_column_letter
 
-# La signature est correcte, elle accepte les deux types de données
-def create_styled_excel(project_info_dict, df_data_edited, t_tb_raw_val, save_data_dict=None):
+def create_styled_excel(project_info_dict, df_all_parts, save_data_dict=None):
     output = io.BytesIO()
-    writer = pd.ExcelWriter(output, engine='openpyxl')
-    
-    wb = writer.book
-    # Crée la feuille de débit visible
-    ws = wb.create_sheet(title="Feuille de Débit", index=0)
-    
-    if "Sheet" in wb.sheetnames and len(wb.sheetnames) > 1:
+    wb = openpyxl.Workbook()
+    # Supprimer la feuille par défaut créée automatiquement
+    if "Sheet" in wb.sheetnames:
         del wb["Sheet"]
 
-    # --- REMIS : TOUT LE CODE DE STYLES ET D'ÉCRITURE DE LA FEUILLE DE DÉBIT ---
+    # --- DÉFINITION DES STYLES (Basés sur le modèle visuel) ---
+    # Couleurs
+    COLOR_PINK = "FF99CC"     # Rose (Devis / Date)
+    COLOR_GREEN = "CCFFCC"    # Vert (Panneau / Epaisseur)
+    COLOR_WHITE = "FFFFFF"
     
-    # Styles
-    bold_font = Font(bold=True)
-    pink_fill = PatternFill(start_color="FFC0CB", end_color="FFC0CB", fill_type="solid")
-    green_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")
-    grey_fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
-    thin_border = Border(left=Side(style='thin'), 
-                         right=Side(style='thin'), 
-                         top=Side(style='thin'), 
-                         bottom=Side(style='thin'))
-
-    # Ligne 2: Client
-    ws['B2'] = "Client :"
-    ws['B2'].font = bold_font
-    ws['C2'] = project_info_dict['client']
-    ws.merge_cells('C2:F2')
-
-    # Ligne 3: Réf Chantier
-    ws['B3'] = "Réf Chantier :"
-    ws['B3'].font = bold_font
-    ws['C3'] = project_info_dict['ref_chantier']
-    ws.merge_cells('C3:F3')
-
-    # Ligne 4: Téléphone
-    ws['B4'] = "Téléphone / Mail :"
-    ws['B4'].font = bold_font
-    ws['C4'] = project_info_dict['telephone']
-    ws.merge_cells('C4:F4')
-
-    # Ligne 2: Date
-    ws['G2'] = "Date :"
-    ws['G2'].font = bold_font
-    ws['H2'] = project_info_dict['date']
-
-    # Ligne 7: DEVIS/COMMANDE
-    ws['B7'] = "DEVIS"
-    ws['B7'].fill = pink_fill
-    ws['C7'] = "COMMANDE"
-    ws['C7'].fill = pink_fill
+    # Bordures
+    thin = Side(border_style="thin", color="000000")
+    medium = Side(border_style="medium", color="000000") # Contour épais
     
-    ws['E7'] = "Date souhaitée"
-    ws['E7'].fill = pink_fill
-    ws['F7'] = project_info_dict['date_souhaitee']
-    ws['F7'].alignment = Alignment(horizontal='center')
-    ws.merge_cells('F7:G7')
-    ws['F7'].fill = pink_fill
-    ws['G7'].fill = pink_fill
+    border_thin = Border(top=thin, left=thin, right=thin, bottom=thin)
+    border_outline_medium = Border(top=medium, left=medium, right=medium, bottom=medium)
+    border_bottom_medium = Border(bottom=medium)
+    border_right_medium = Border(right=medium)
 
+    # Polices
+    font_bold_lg = Font(name='Arial', size=12, bold=True)
+    font_bold_std = Font(name='Arial', size=10, bold=True)
+    font_std = Font(name='Arial', size=10)
+    font_title_main = Font(name='Arial', size=16, bold=True, underline='single')
 
-    # Ligne 9: Panneau/Décor
-    ws['B9'] = "Panneau / Décor :"
-    ws['B9'].font = bold_font
-    ws['B9'].fill = green_fill
-    ws['C9'] = project_info_dict['panneau_decor']
-    ws.merge_cells('C9:F9')
-    for col in ['C','D','E','F']: ws[f'{col}9'].fill = green_fill
-
-    ws['G9'] = "Epaisseur :"
-    ws['G9'].font = bold_font
-    ws['G9'].fill = green_fill
-    ws['H9'] = t_tb_raw_val # Récupère l'épaisseur
-    ws['H9'].fill = green_fill
-
-    # Ligne 10: Chant
-    ws['B10'] = "Chant :"
-    ws['B10'].font = bold_font
-    ws['B10'].fill = green_fill
-    ws['D10'] = project_info_dict['chant_mm']
-    ws['D10'].fill = green_fill
-    ws['F10'] = "Décor :"
-    ws['F10'].font = bold_font
-    ws['F10'].fill = green_fill
-    ws['G10'] = project_info_dict['decor_chant']
-    ws.merge_cells('G10:H10')
-    ws['G10'].fill = green_fill
-    ws['H10'].fill = green_fill
-
-    # --- Écriture du DataFrame ---
-    
-    # Convertir les booléens en OUI/NON pour l'export
-    df_export = df_data_edited.copy()
-    
-    for col in ["Chant Avant", "Chant Arrière", "Chant Gauche", "Chant Droit"]:
+    # --- PRÉPARATION DES DONNÉES ---
+    # 1. Conversion Booléens -> OUI / NON
+    df_export = df_all_parts.copy()
+    chant_cols = ["Chant Avant", "Chant Arrière", "Chant Gauche", "Chant Droit"]
+    for col in chant_cols:
         if col in df_export.columns:
-            # Gère le cas où la colonne n'existe pas (si le df est vide)
+            # Map True->OUI, False->NON, nan->NON
             df_export[col] = df_export[col].map({True: 'OUI', False: 'NON', 'nan': 'NON'})
+            df_export[col] = df_export[col].fillna('NON')
 
-    # Ligne de titre pour le tableau
-    header_row = 13
-    ws.cell(row=header_row, column=1, value="N°").font = bold_font
-    ws.cell(row=header_row, column=2, value="Référence Pièce").font = bold_font
-    ws.cell(row=header_row, column=3, value="Qté").font = bold_font
-    ws.cell(row=header_row, column=4, value="Longueur en mm").font = bold_font
-    ws.cell(row=header_row, column=5, value="Chant").font = bold_font
-    ws.merge_cells(start_row=header_row, start_column=5, end_row=header_row, end_column=6)
-    ws.cell(row=header_row+1, column=5, value="Avant").font = bold_font
-    ws.cell(row=header_row+1, column=6, value="Arrière").font = bold_font
-    ws.cell(row=header_row, column=7, value="Largeur en mm").font = bold_font
-    ws.cell(row=header_row, column=8, value="Chant").font = bold_font
-    ws.merge_cells(start_row=header_row, start_column=8, end_row=header_row, end_column=9)
-    ws.cell(row=header_row+1, column=8, value="Gauche").font = bold_font
-    ws.cell(row=header_row+1, column=9, value="Droit").font = bold_font
-    ws.cell(row=header_row, column=10, value="Usinage (*)").font = bold_font
-    
-    # Centrer les en-têtes
-    for r in range(header_row, header_row + 2):
-        for c in range(1, 11):
-            ws.cell(row=r, column=c).alignment = Alignment(horizontal='center', vertical='center')
-            ws.cell(row=r, column=c).fill = grey_fill
-            ws.cell(row=r, column=c).border = thin_border
+    # 2. Gestion Multi-Matières (Création des onglets)
+    if "Matière" in df_export.columns:
+        materials = df_export["Matière"].unique()
+    else:
+        materials = ["Défaut"]
+        df_export["Matière"] = "Défaut"
 
-    # Écrire les données du DataFrame
-    start_data_row = header_row + 2
-    
-    # Utilise .itertuples() pour écrire les données
-    # Index 0: Lettre, 1: Réf Pièce, 2: Qté, 3: L, 4: ChA, 5: ChP, 6: l, 7: ChG, 8: ChD, 9: Usinage
-    # Doit correspondre à l'ordre dans le DataFrame 'df_global'
-    for r_idx, row in enumerate(df_export.itertuples(index=False), start=start_data_row):
-        ws.cell(row=r_idx, column=1, value=row[0]) # Lettre
-        ws.cell(row=r_idx, column=2, value=row[1]) # Référence Pièce
-        ws.cell(row=r_idx, column=3, value=row[2]) # Qté
-        ws.cell(row=r_idx, column=4, value=row[3]) # Longueur (mm)
-        ws.cell(row=r_idx, column=5, value=row[4]) # Chant Avant
-        ws.cell(row=r_idx, column=6, value=row[5]) # Chant Arrière
-        ws.cell(row=r_idx, column=7, value=row[6]) # Largeur (mm)
-        ws.cell(row=r_idx, column=8, value=row[7]) # Chant Gauche
-        ws.cell(row=r_idx, column=9, value=row[8]) # Chant Droit
-        ws.cell(row=r_idx, column=10, value=row[9]) # Usinage
+    for mat_name in materials:
+        # Nettoyage du nom de l'onglet (Excel interdit certains caractères)
+        safe_name = str(mat_name).replace("/", "-").replace("?", "")[:30]
+        ws = wb.create_sheet(title=safe_name)
         
-        # Appliquer les bordures aux données
-        for c in range(1, 11):
-            ws.cell(row=r_idx, column=c).border = thin_border
-            if c in [3, 5, 6, 8, 9]:
-                ws.cell(row=r_idx, column=c).alignment = Alignment(horizontal='center')
+        # Filtrer les données pour cet onglet
+        df_mat = df_export[df_export["Matière"] == mat_name].reset_index(drop=True)
+        
+        # --- CONFIGURATION DES COLONNES (A à K) ---
+        # Structure : N° | Lettre | Réf | Qté | Long | ChAv | ChAr | Larg | ChG | ChD | Usinage
+        
+        ws.column_dimensions['A'].width = 4  # N°
+        ws.column_dimensions['B'].width = 5  # Lettre
+        ws.column_dimensions['C'].width = 40 # Réf Pièce (Large pour bien lire)
+        ws.column_dimensions['D'].width = 6  # Qté
+        ws.column_dimensions['E'].width = 12 # Longueur
+        ws.column_dimensions['F'].width = 6  # Ch Av
+        ws.column_dimensions['G'].width = 6  # Ch Ar
+        ws.column_dimensions['H'].width = 12 # Largeur
+        ws.column_dimensions['I'].width = 6  # Ch G
+        ws.column_dimensions['J'].width = 6  # Ch D
+        ws.column_dimensions['K'].width = 40 # Usinage (Large)
 
-    # Ajuster la largeur des colonnes
-    ws.column_dimensions['A'].width = 8
-    ws.column_dimensions['B'].width = 25
-    ws.column_dimensions['D'].width = 15
-    ws.column_dimensions['G'].width = 15
-    ws.column_dimensions['J'].width = 25
-    
-    # --- FIN DU CODE DE LA FEUILLE DE DÉBIT ---
+        last_col_letter = 'K'
+
+        # --- DESSIN DE L'EN-TÊTE ---
+        
+        # Titre Global (similaire image)
+        ws.merge_cells(f'F1:{last_col_letter}1')
+        ws['F1'] = "FEUILLE DE DEBIT"
+        ws['F1'].font = font_title_main
+        ws['F1'].alignment = Alignment(horizontal='center', vertical='bottom')
+        
+        # Ligne Date (Ligne 1/2 fusion partielle à droite)
+        ws.merge_cells(f'H2:{last_col_letter}2')
+        ws['H2'] = f"Date :      {project_info_dict.get('date', '')}"
+        ws['H2'].font = font_bold_std
+        ws['H2'].alignment = Alignment(horizontal='right', vertical='center')
+        ws['H2'].border = border_bottom_medium # Souligné épais
+        
+        # Ligne Client (Ligne 3)
+        ws.merge_cells(f'C3:{last_col_letter}3')
+        ws['C3'] = project_info_dict.get('client', '').upper()
+        ws['C3'].font = font_bold_lg
+        ws['C3'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['C3'].border = border_thin
+        
+        ws['B3'] = "Client :"
+        ws['B3'].font = font_bold_std
+        ws['B3'].alignment = Alignment(horizontal='right', vertical='center')
+
+        # Ligne Réf Chantier (Ligne 4)
+        ws.merge_cells(f'C4:{last_col_letter}4')
+        ws['C4'] = project_info_dict.get('ref_chantier', '')
+        ws['C4'].font = font_bold_std
+        ws['C4'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['C4'].border = border_thin
+        
+        ws['B4'] = "Réf Chantier :"
+        ws['B4'].font = font_bold_std
+        ws['B4'].alignment = Alignment(horizontal='right', vertical='center')
+
+        # Ligne Adresse (Ligne 5 - Ajout optionnel pour être complet)
+        ws.merge_cells(f'C5:{last_col_letter}5')
+        ws['C5'] = project_info_dict.get('adresse_chantier', '')
+        ws['C5'].font = font_std
+        ws['C5'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['C5'].border = border_thin
+        
+        ws['B5'] = "Adresse :"
+        ws['B5'].font = font_bold_std
+        ws['B5'].alignment = Alignment(horizontal='right', vertical='center')
+
+        # Ligne DEVIS / COMMANDE / DATE (Ligne 6 - Fond ROSE)
+        ws.row_dimensions[6].height = 25
+        
+        # Bloc Devis/Commande
+        ws.merge_cells('B6:C6')
+        ws['B6'] = "DEVIS / COMMANDE"
+        ws['B6'].fill = PatternFill(start_color=COLOR_PINK, end_color=COLOR_PINK, fill_type="solid")
+        ws['B6'].font = font_bold_std
+        ws['B6'].alignment = Alignment(horizontal='right', vertical='center')
+        ws['B6'].border = border_outline_medium
+        ws['C6'].border = border_outline_medium # Pour fermer la fusion
+
+        # Bloc Label Date
+        ws.merge_cells('D6:E6')
+        ws['D6'] = "Date souhaitée"
+        ws['D6'].fill = PatternFill(start_color=COLOR_PINK, end_color=COLOR_PINK, fill_type="solid")
+        ws['D6'].font = font_bold_std
+        ws['D6'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['D6'].border = border_outline_medium
+        ws['E6'].border = border_outline_medium
+
+        # Bloc Valeur Date
+        ws.merge_cells(f'F6:{last_col_letter}6')
+        ws['F6'] = str(project_info_dict.get('date_souhaitee', ''))
+        ws['F6'].fill = PatternFill(start_color=COLOR_PINK, end_color=COLOR_PINK, fill_type="solid")
+        ws['F6'].font = font_bold_lg
+        ws['F6'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['F6'].border = border_outline_medium
+        for c_idx in range(7, 12): # G à K
+             ws.cell(row=6, column=c_idx).border = border_outline_medium
 
 
-    # --- AJOUT DES DONNÉES DE SAUVEGARDE (Inchangé) ---
+        # Ligne PANNEAU / DECOR / EPAISSEUR (Ligne 7 - Fond VERT)
+        ws.row_dimensions[7].height = 20
+        
+        # Label Panneau
+        ws.merge_cells('B7:C7')
+        ws['B7'] = "Panneau / Décor :"
+        ws['B7'].font = font_bold_std
+        ws['B7'].alignment = Alignment(horizontal='right', vertical='center')
+        ws['B7'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['B7'].border = border_outline_medium
+        ws['C7'].border = border_outline_medium
+        
+        # Valeur Panneau
+        ws.merge_cells('D7:H7')
+        ws['D7'] = project_info_dict.get('panneau_decor', '')
+        ws['D7'].font = font_bold_std
+        ws['D7'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['D7'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['D7'].border = border_outline_medium
+        for c_idx in range(5, 9): ws.cell(row=7, column=c_idx).border = border_outline_medium
+
+        # Label Epaisseur
+        ws['I7'] = "Epaisseur :"
+        ws['I7'].font = font_bold_std
+        ws['I7'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['I7'].border = border_outline_medium
+        
+        # Valeur Epaisseur (On prend celle de la première ligne de donnée si dispo, sinon défaut)
+        default_ep = 19
+        if not df_mat.empty and 'Epaisseur' in df_mat.columns:
+            val = df_mat.iloc[0]['Epaisseur']
+            # Si c'est un float, on le nettoie
+            try: default_ep = float(val)
+            except: default_ep = val
+            
+        ws.merge_cells(f'J7:{last_col_letter}7')
+        ws['J7'] = default_ep
+        ws['J7'].font = font_bold_std
+        ws['J7'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['J7'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['J7'].border = border_outline_medium
+        ws['K7'].border = border_outline_medium
+
+
+        # Ligne CHANT / DECOR (Ligne 8 - Fond VERT)
+        ws.row_dimensions[8].height = 20
+        
+        # Label Chant
+        ws.merge_cells('B8:C8')
+        ws['B8'] = "Chant :"
+        ws['B8'].font = font_bold_std
+        ws['B8'].alignment = Alignment(horizontal='right', vertical='center')
+        ws['B8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['B8'].border = border_outline_medium
+        ws['C8'].border = border_outline_medium
+
+        # Label (mm)
+        ws['D8'] = "(mm)"
+        ws['D8'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['D8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['D8'].border = border_outline_medium
+
+        # Valeur Chant mm
+        ws['E8'] = project_info_dict.get('chant_mm', '')
+        ws['E8'].font = font_bold_std
+        ws['E8'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['E8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['E8'].border = border_outline_medium
+
+        # Vide Vert
+        ws.merge_cells('F8:H8')
+        ws['F8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['F8'].border = border_outline_medium
+        ws['G8'].border = border_outline_medium
+        ws['H8'].border = border_outline_medium
+
+        # Label Décor
+        ws['I8'] = "Décor :"
+        ws['I8'].font = font_bold_std
+        ws['I8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['I8'].border = border_outline_medium
+
+        # Valeur Décor
+        ws.merge_cells(f'J8:{last_col_letter}8')
+        ws['J8'] = project_info_dict.get('decor_chant', '')
+        ws['J8'].font = font_bold_std
+        ws['J8'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['J8'].fill = PatternFill(start_color=COLOR_GREEN, end_color=COLOR_GREEN, fill_type="solid")
+        ws['J8'].border = border_outline_medium
+        ws['K8'].border = border_outline_medium
+
+
+        # --- TITRES DU TABLEAU (Lignes 10 et 11) ---
+        # On saute la ligne 9 pour aérer un peu
+        
+        # Cellules fusionnées verticalement
+        # Référence Pièce (C)
+        ws.merge_cells('C10:C11')
+        ws['C10'] = "Référence Pièce"
+        ws['C10'].font = font_bold_std
+        ws['C10'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['C10'].border = border_outline_medium
+        ws['C11'].border = border_outline_medium
+
+        # Qté (D)
+        ws.merge_cells('D10:D11')
+        ws['D10'] = "Qté"
+        ws['D10'].font = font_bold_std
+        ws['D10'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['D10'].border = border_outline_medium
+        ws['D11'].border = border_outline_medium
+
+        # Usinage (K)
+        ws.merge_cells('K10:K11')
+        ws['K10'] = "Usinage (*)"
+        ws['K10'].font = font_bold_std
+        ws['K10'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['K10'].border = border_outline_medium
+        ws['K11'].border = border_outline_medium
+
+        # Cellules fusionnées horizontalement puis sous-divisées
+        # Longueur (E)
+        ws.merge_cells('E10:E11')
+        ws['E10'] = "Longueur\nen mm"
+        ws['E10'].font = font_bold_std
+        ws['E10'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws['E10'].border = border_outline_medium
+        ws['E11'].border = border_outline_medium
+
+        # Largeur (H)
+        ws.merge_cells('H10:H11')
+        ws['H10'] = "Largeur en\nmm"
+        ws['H10'].font = font_bold_std
+        ws['H10'].alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws['H10'].border = border_outline_medium
+        ws['H11'].border = border_outline_medium
+
+        # Groupe Chant 1 (Avant/Arrière - F/G)
+        ws.merge_cells('F10:G10')
+        ws['F10'] = "Chant"
+        ws['F10'].font = font_bold_std
+        ws['F10'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['F10'].border = border_outline_medium
+        ws['G10'].border = border_outline_medium
+        
+        ws['F11'] = "Avant"
+        ws['F11'].font = font_bold_std
+        ws['F11'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['F11'].border = border_outline_medium
+        
+        ws['G11'] = "Arrière"
+        ws['G11'].font = font_bold_std
+        ws['G11'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['G11'].border = border_outline_medium
+
+        # Groupe Chant 2 (Gauche/Droit - I/J)
+        ws.merge_cells('I10:J10')
+        ws['I10'] = "Chant"
+        ws['I10'].font = font_bold_std
+        ws['I10'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['I10'].border = border_outline_medium
+        ws['J10'].border = border_outline_medium
+        
+        ws['I11'] = "Gauche"
+        ws['I11'].font = font_bold_std
+        ws['I11'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['I11'].border = border_outline_medium
+        
+        ws['J11'] = "Droit"
+        ws['J11'].font = font_bold_std
+        ws['J11'].alignment = Alignment(horizontal='center', vertical='center')
+        ws['J11'].border = border_outline_medium
+
+        # --- DONNÉES DU TABLEAU ---
+        current_row = 12
+        line_number = 1
+        
+        for idx, row in df_mat.iterrows():
+            # A: N° | B: Lettre | C: Ref | D: Qté | E: Long | F: Av | G: Ar | H: Larg | I: G | J: D | K: Usinage
+            
+            # Nettoyage de la lettre (Gardez juste la lettre finale si format C0-A)
+            raw_lettre = row.get("Lettre", "")
+            lettre_display = raw_lettre.split('-')[-1] if '-' in str(raw_lettre) else raw_lettre
+
+            # Données
+            ws.cell(row=current_row, column=1, value=line_number).font = font_bold_std # N°
+            ws.cell(row=current_row, column=2, value=lettre_display).font = font_std
+            ws.cell(row=current_row, column=3, value=row.get("Référence Pièce", "")).font = font_std
+            ws.cell(row=current_row, column=4, value=row.get("Qté", 1)).font = font_std
+            ws.cell(row=current_row, column=5, value=row.get("Longueur (mm)", 0)).font = font_std
+            ws.cell(row=current_row, column=6, value=row.get("Chant Avant", "NON")).font = font_std
+            ws.cell(row=current_row, column=7, value=row.get("Chant Arrière", "NON")).font = font_std
+            ws.cell(row=current_row, column=8, value=row.get("Largeur (mm)", 0)).font = font_std
+            ws.cell(row=current_row, column=9, value=row.get("Chant Gauche", "NON")).font = font_std
+            ws.cell(row=current_row, column=10, value=row.get("Chant Droit", "NON")).font = font_std
+            ws.cell(row=current_row, column=11, value=row.get("Usinage", "")).font = font_std
+
+            # Style des cellules de données (Bordures fines + Alignement)
+            for c_idx in range(1, 12):
+                cell = ws.cell(row=current_row, column=c_idx)
+                cell.border = border_thin
+                
+                # Alignement
+                if c_idx in [3, 11]: # Ref et Usinage
+                    cell.alignment = Alignment(horizontal='left', vertical='center')
+                else:
+                    cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Bordure épaisse à gauche de la colonne Lettre et à droite du tableau
+            ws.cell(row=current_row, column=1).border = Border(top=thin, bottom=thin, left=medium, right=thin)
+            ws.cell(row=current_row, column=11).border = Border(top=thin, bottom=thin, left=thin, right=medium)
+
+            current_row += 1
+            line_number += 1
+
+        # Remplissage de lignes vides pour atteindre au moins 15 lignes (esthétique)
+        while line_number <= 15:
+            ws.cell(row=current_row, column=1, value=line_number).font = font_bold_std
+            for c_idx in range(1, 12):
+                cell = ws.cell(row=current_row, column=c_idx)
+                cell.border = border_thin
+                cell.alignment = Alignment(horizontal='center', vertical='center')
+            
+            # Bordures externes épaisses
+            ws.cell(row=current_row, column=1).border = Border(top=thin, bottom=thin, left=medium, right=thin)
+            ws.cell(row=current_row, column=11).border = Border(top=thin, bottom=thin, left=thin, right=medium)
+            
+            current_row += 1
+            line_number += 1
+
+        # Bordure épaisse en bas du tableau
+        for c_idx in range(1, 12):
+            ws.cell(row=current_row-1, column=c_idx).border = Border(bottom=medium, left=thin, right=thin, top=thin)
+            # Coins
+            if c_idx == 1: ws.cell(row=current_row-1, column=c_idx).border = Border(bottom=medium, left=medium, right=thin, top=thin)
+            if c_idx == 11: ws.cell(row=current_row-1, column=c_idx).border = Border(bottom=medium, left=thin, right=medium, top=thin)
+
+    # Sauvegarde des données brutes JSON (Caché)
     if save_data_dict:
         try:
             ws_data = wb.create_sheet(title="SaveData")
-            json_string = json.dumps(save_data_dict, indent=2)
-            ws_data['A1'] = json_string
-            ws_data.sheet_state = 'hidden' # Cache la feuille
-        except Exception as e:
-            print(f"Erreur lors de l'écriture des données de sauvegarde : {e}")
-            pass
-    # --- FIN DU BLOC DE SAUVEGARDE ---
-    
-    writer.close() 
+            ws_data['A1'] = json.dumps(save_data_dict, indent=2)
+            ws_data.sheet_state = 'hidden'
+        except: pass
+
+    wb.save(output)
     return output.getvalue()
