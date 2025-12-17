@@ -1,4 +1,4 @@
-# Contenu de app.py (2.py)
+# Contenu de app.py
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
@@ -100,43 +100,19 @@ def calculate_all_project_parts():
         # 3. Tiroir
         if cabinet['drawer_props']['has_drawer']:
             drp = cabinet['drawer_props']
+            
+            # Gestion des types N, M, K, D
+            tech_type = drp.get('drawer_tech_type', 'K')
+            back_height_map = {'N': 69.0, 'M': 84.0, 'K': 116.0, 'D': 199.0}
+            fixed_back_h = back_height_map.get(tech_type, 116.0)
+            
             cav, car, cg, cd = get_automatic_edge_banding("Façade")
             all_parts.append({"Lettre": f"C{i}-TF", "Référence Pièce": f"Façade Tiroir (C{i})", "Matière": drp.get('material', 'Matière Tiroir'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": drp['drawer_face_H_raw'], "Largeur (mm)": dims['L_raw'] - (2 * drp['drawer_gap']), "Epaisseur": drp.get('drawer_face_thickness', 19.0), "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": "CF plan"})
+            
             cav, car, cg, cd = get_automatic_edge_banding("Tiroir Dos")
-            all_parts.append({"Lettre": f"C{i}-TD", "Référence Pièce": f"Tiroir Dos (C{i})", "Matière": cabinet.get('material_body', 'Matière Corps'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": 150, "Largeur (mm)": dims['L_raw']-2*t_lr-40, "Epaisseur": 16.0, "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": ""})
-
-        # 4. Étagères
-        if 'shelves' in cabinet:
-            for s_idx, s in enumerate(cabinet['shelves']):
-                cav, car, cg, cd = get_automatic_edge_banding("Etagère")
-                depth_base = dims['W_raw'] - 10.0
-                
-                s_type = s.get('shelf_type', 'mobile')
-                
-                if s_type == 'mobile':
-                    len_val = (dims['L_raw'] - 2*t_lr) - 1.0; wid_val = depth_base; usi = ""
-                else:
-                    len_val = (dims['L_raw'] - 2*t_lr); wid_val = depth_base; usi = "CF plan"
-                
-                shelf_key = f"C{i}_S{s_idx}"
-                shelf_dims_cache[shelf_key] = (len_val, wid_val)
-                
-                all_parts.append({
-                    "Lettre": f"C{i}-E{s_idx+1}", 
-                    "Référence Pièce": f"Etagère {s_idx+1} ({s_type})", 
-                    "Matière": s.get('material', 'Matière Etagère'), 
-                    "Caisson": f"C{i}", 
-                    "Qté": 1, 
-                    "Longueur (mm)": len_val, 
-                    "Largeur (mm)": wid_val, 
-                    "Epaisseur": s['thickness'], 
-                    "Chant Avant": cav, 
-                    "Chant Arrière": car, 
-                    "Chant Gauche": cg, 
-                    "Chant Droit": cd, 
-                    "Usinage": usi
-                })
-                
+            # Épaisseur forcée à 16mm pour Dos
+            all_parts.append({"Lettre": f"C{i}-TD", "Référence Pièce": f"Tiroir Dos (C{i})", "Matière": cabinet.get('material_body', 'Matière Corps'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": fixed_back_h, "Largeur (mm)": dims['L_raw']-2*t_lr-40, "Epaisseur": 16.0, "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": ""})
+            
     return all_parts, shelf_dims_cache
 
 # ==============================================================================
@@ -231,6 +207,11 @@ with col1:
                     st.markdown("#### Tiroir Bloc (Façade)")
                     st.toggle("Ajouter un tiroir bloc", value=dr_p['has_drawer'], key=f"has_drawer_{idx}", on_change=lambda: update_selected_cabinet_drawer('has_drawer'))
                     if dr_p['has_drawer']:
+                        tech_opts = ['K', 'M', 'N', 'D']
+                        curr_tech = dr_p.get('drawer_tech_type', 'K')
+                        idx_tech = tech_opts.index(curr_tech) if curr_tech in tech_opts else 0
+                        st.selectbox("Type de Tiroir (Système)", options=tech_opts, index=idx_tech, key=f"drawer_tech_type_{idx}", on_change=lambda: update_selected_cabinet_drawer('drawer_tech_type'))
+                        
                         st.number_input("Hauteur Face (mm)", value=dr_p['drawer_face_H_raw'], key=f"drawer_face_H_raw_{idx}", on_change=lambda: update_selected_cabinet_drawer('drawer_face_H_raw'), format="%.0f", step=1.0)
                         st.number_input("Offset / bas caisson (mm)", value=dr_p['drawer_bottom_offset'], key=f"drawer_bottom_offset_{idx}", on_change=lambda: update_selected_cabinet_drawer('drawer_bottom_offset'), format="%.0f", step=1.0)
                         st.number_input("Épaisseur Face (mm)", value=dr_p.get('drawer_face_thickness', 19.0), key=f"drawer_face_thickness_{idx}", on_change=lambda: update_selected_cabinet_drawer('drawer_face_thickness'), format="%.0f", step=1.0)
@@ -522,6 +503,49 @@ with col2:
                  else: 
                      holes_md.append({'type':'vis','x':20.0,'y':y,'diam_str':"⌀5/11.5"}); holes_md.append({'type':'vis','x':52.0,'y':y,'diam_str':"⌀5/11.5"})
 
+        # --- NOUVEAU : TROUS DE COULISSES SUR LES MONTANTS (Selon largeur et type) ---
+        if cab['drawer_props']['has_drawer']:
+            drp = cab['drawer_props']
+            tech_type = drp.get('drawer_tech_type', 'K')
+            
+            # Formule Y = épaisseur montant (t_tb) + 33mm + Offset
+            y_slide = t_tb + 33.0 + drp['drawer_bottom_offset']
+            
+            x_slide_holes = []
+            wr = W_raw
+            
+            # Priorité : Si > 643mm (Overrides)
+            if wr > 643:
+                x_slide_holes = [19, 37, 133, 261, 293, 389, 421, 549]
+            else:
+                # Logique par ranges
+                # TYPE N (Specifique)
+                if tech_type == 'N':
+                    if 403 < wr < 452: x_slide_holes = [19, 37, 133, 165, 229, 325]
+                    elif 453 < wr < 502: x_slide_holes = [19, 37, 133, 165, 261, 357]
+                    elif 503 < wr < 552: x_slide_holes = [19, 37, 133, 261, 293, 453]
+                    elif 553 < wr < 602: x_slide_holes = [19, 37, 133, 261, 293, 453]
+                    else:
+                        pass 
+
+                # TYPE D, K, M (et fallback N)
+                if not x_slide_holes:
+                    if 273 < wr < 302: x_slide_holes = [19, 37, 133, 261]
+                    elif 303 < wr < 352: x_slide_holes = [19, 37, 133, 165, 261]
+                    elif 353 < wr < 402: x_slide_holes = [19, 37, 133, 165, 325]
+                    elif 403 < wr < 452: x_slide_holes = [19, 37, 133, 165, 229, 325]
+                    elif 453 < wr < 502: x_slide_holes = [19, 37, 133, 165, 261, 357]
+                    elif 503 < wr < 552: x_slide_holes = [19, 37, 133, 261, 293, 453]
+                    elif 553 < wr < 602: x_slide_holes = [19, 37, 133, 261, 293, 453]
+                    elif 603 < wr < 652: x_slide_holes = [19, 37, 133, 261, 293, 325, 357, 517]
+
+            for x_s in x_slide_holes:
+                # Montant Gauche (Reference Avant = 0)
+                holes_mg.append({'type': 'vis', 'x': x_s, 'y': y_slide, 'diam_str': "⌀5/12"})
+                # Montant Droit (Reference Avant = Opposé si miroir)
+                # ICI CORRECTION : Inversion de l'axe X pour le montant droit
+                holes_md.append({'type': 'vis', 'x': W_mont - x_s, 'y': y_slide, 'diam_str': "⌀5/12"})
+
         proj = {"project_name": st.session_state.project_name, "corps_meuble": f"Caisson {sel_idx}", "quantity": 1, "date": ""}
         tholes = [{'type':'tourillon','x':t_tb/2,'y':y,'diam_str':"⌀8/20"} for y in ys_dowel]
         
@@ -551,13 +575,65 @@ with col2:
             
         if cab['drawer_props']['has_drawer']:
             drp = cab['drawer_props']
-            f_holes = [] ; c_tf = {"Chant Avant":True, "Chant Arrière":True, "Chant Gauche":True, "Chant Droit":True}
+            f_holes = [] 
+            dr_H = drp['drawer_face_H_raw']
+            dr_L = L_raw - (2 * drp['drawer_gap'])
+            
+            tech_type = drp.get('drawer_tech_type', 'K')
+            
+            # --- LOGIQUE PERÇAGE FAÇADE (Selon type) ---
+            # K: 3 trous (47.5, 79.5, 111.5)
+            # M: 2 trous (47.5, 79.5)
+            # N: 2 trous (32.5, 64.5)
+            # D: 3 trous (47.5, 79.5, 207.5)
+            
+            face_coords_map = {
+                'K': [47.5, 79.5, 111.5],
+                'M': [47.5, 79.5],
+                'N': [32.5, 64.5],
+                'D': [47.5, 79.5, 207.5]
+            }
+            
+            y_coords_face = face_coords_map.get(tech_type, [47.5, 79.5, 111.5])
+            
+            for y in y_coords_face:
+                if y < dr_H:
+                    f_holes.append({'type': 'tourillon', 'x': 32.5, 'y': y, 'diam_str': "⌀10/12"})
+                    f_holes.append({'type': 'tourillon', 'x': dr_L - 32.5, 'y': y, 'diam_str': "⌀10/12"})
+
+            c_tf = {"Chant Avant":True, "Chant Arrière":True, "Chant Gauche":True, "Chant Droit":True}
             cutout = {'width': drp.get('drawer_handle_width', 150.0), 'height': drp.get('drawer_handle_height', 40.0), 'offset_top': drp.get('drawer_handle_offset_top', 10.0)} if drp.get('drawer_handle_type') == 'integrated_cutout' else None
-            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Face (C{sel_idx})", L_raw-(2*drp['drawer_gap']), drp['drawer_face_H_raw'], drp.get('drawer_face_thickness', 19.0), unit_str, proj, c_tf, f_holes, [], [], cutout), use_container_width=True)
+            
+            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Face (C{sel_idx}) [Type {tech_type}]", dr_L, dr_H, drp.get('drawer_face_thickness', 19.0), unit_str, proj, c_tf, f_holes, [], [], cutout), use_container_width=True)
+            
+            # --- LOGIQUE PERÇAGE DOS (Selon type) ---
+            # Hauteur forcée selon type
+            back_height_map = {'N': 69.0, 'M': 84.0, 'K': 116.0, 'D': 199.0}
+            fixed_back_h = back_height_map.get(tech_type, 116.0)
             
             c_td = {"Chant Avant":False, "Chant Arrière":False, "Chant Gauche":False, "Chant Droit":False}
-            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Dos (C{sel_idx})", L_raw - (2 * t_lr) - 49.0, 151.0, 16.0, unit_str, proj, c_td), use_container_width=True)
-            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Fond (C{sel_idx})", L_raw - (2 * t_lr) - 49.0, W_raw - (20.0 + t_fb), 8.0, unit_str, proj, c_td), use_container_width=True)
+            d_L_t = (L_raw - (2 * t_lr)) - 49.0
+            d_holes_t = []
+            
+            # Coordonnées Y pour le dos (X=9mm du bord)
+            back_coords_map = {
+                'K': [30.0, 62.0, 94.0],
+                'M': [32.0, 64.0],
+                'N': [31.0, 47.0],
+                'D': [31.0, 63.0, 95.0, 159.0, 191.0]
+            }
+            y_coords_back = back_coords_map.get(tech_type, [30.0, 62.0, 94.0])
+            
+            for dy in y_coords_back:
+                # Côté Gauche (9mm du bord)
+                d_holes_t.append({'type': 'vis', 'x': 9.0, 'y': dy, 'diam_str': "⌀2.5/3"})
+                # Côté Droit (9mm du bord)
+                d_holes_t.append({'type': 'vis', 'x': d_L_t - 9.0, 'y': dy, 'diam_str': "⌀2.5/3"})
+
+            # Le Dos
+            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Dos (C{sel_idx}) [Type {tech_type}]", d_L_t, fixed_back_h, 16.0, unit_str, proj, c_td, d_holes_t), use_container_width=True)
+            # Le Fond (Horizontal) - Epaisseur forcée à 16mm
+            st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Fond (C{sel_idx})", d_L_t, W_raw - (20.0 + t_fb), 16.0, unit_str, proj, c_td), use_container_width=True)
 
         if 'shelves' in cab:
             for s_idx, s in enumerate(cab['shelves']):
@@ -573,4 +649,3 @@ with col2:
 
     else:
         st.info("Créez un caisson pour voir les plans.")
-        
