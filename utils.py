@@ -4,23 +4,19 @@ import datetime
 import re
 
 def get_material_library():
-    """Retourne la 'bibliothèque' de matières/couleurs."""
-    return {
-        "Blanc Mat": "#f5f5f5",
-        "Gris Anthracite": "#36454F",
-        "Chêne Naturel": "#D2B48C",
-        "Noyer Foncé": "#6B4423",
-        "Bleu Nuit": "#2C3E50",
-        "Rouge Vif": "#c0392b"
-    }
+    """Retourne une bibliothèque vide (l'utilisateur entre la matière manuellement)."""
+    return {}
 
 def get_default_debit_data():
-    """Retourne la liste de pièces par défaut pour un NOUVEAU caisson."""
+    """Retourne la liste de pièces par défaut avec les CHANTS FORCÉS selon vos règles."""
     return [
-        {"Lettre": "A", "Référence Pièce": "Traverse Bas (Tb)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
-        {"Lettre": "B", "Référence Pièce": "Traverse Haut (Th)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
-        {"Lettre": "C", "Référence Pièce": "Montant Gauche (Mg)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Vis/Tourillons Faces H&B"},
-        {"Lettre": "D", "Référence Pièce": "Montant Droit (Md)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Vis/Tourillons Faces H&B"},
+        # Traverse : Avant/Arrière = True, Gauche/Droit = False (bouts usinés)
+        {"Lettre": "A", "Référence Pièce": "Traverse Bas (Tb)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
+        {"Lettre": "B", "Référence Pièce": "Traverse Haut (Th)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
+        # Montants : Champs Partout (4 côtés)
+        {"Lettre": "C", "Référence Pièce": "Montant Gauche (Mg)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": True, "Chant Droit": True, "Usinage": "Vis/Tourillons Faces H&B"},
+        {"Lettre": "D", "Référence Pièce": "Montant Droit (Md)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": True, "Chant Droit": True, "Usinage": "Vis/Tourillons Faces H&B"},
+        # Fond : Pas de chant par défaut
         {"Lettre": "E", "Référence Pièce": "Fond (F)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": False, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": ""},
     ]
 
@@ -40,7 +36,7 @@ def get_default_door_props():
         'door_gap': 2.0, 
         'door_thickness': 18.0,
         'door_model': 'standard',
-        'material': 'Chêne Naturel'
+        'material': 'Matière Porte'
     }
 
 def get_default_drawer_props():
@@ -55,16 +51,19 @@ def get_default_drawer_props():
         'drawer_handle_width': 150.0,
         'drawer_handle_height': 40.0,
         'drawer_handle_offset_top': 10.0,
-        'material': 'Rouge Vif'
+        'material': 'Matière Tiroir'
     }
 
 def get_default_shelf_props():
     """Retourne les propriétés par défaut pour une NOUVELLE étagère."""
     return {
-        'height': 300.0, # Position du bas de l'étagère par rapport au bas intérieur
+        'height': 300.0, 
         'thickness': 19.0,
-        'material': 'Blanc Mat',
-        'shelf_type': 'mobile' # NOUVEAU: 'mobile' (taquets) ou 'fixe' (vis/tourillons)
+        'material': 'Matière Étagère',
+        'shelf_type': 'mobile', 
+        'mobile_machining_type': 'full_height', # 'full_height', '4_holes', 'custom'
+        'custom_holes_above': 0,
+        'custom_holes_below': 0
     }
 
 def initialize_session_state():
@@ -89,7 +88,7 @@ def initialize_session_state():
     
     # Propriétés des pieds
     st.session_state.setdefault('has_feet', False)
-    st.session_state.setdefault('foot_height', 80.0)
+    st.session_state.setdefault('foot_height', 80.0) 
     st.session_state.setdefault('foot_diameter', 30.0)
 
 def calculate_hole_positions(W_raw):
