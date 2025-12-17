@@ -125,7 +125,6 @@ def group_holes_for_dimensioning(y_vals):
     y_vals = [round(y, 1) for y in y_vals]
     sorted_y = sorted(list(set(y_vals)))
     if not sorted_y: return []
-    
     groups = []
     current_group = [sorted_y[0]]
     for i in range(1, len(sorted_y)):
@@ -138,7 +137,6 @@ def group_holes_for_dimensioning(y_vals):
             groups.append(current_group)
             current_group = [y]
     groups.append(current_group)
-    
     result = []
     for grp in groups:
         if len(grp) >= 2: result.append({'start': grp[0], 'end': grp[-1], 'count': len(grp), 'type': 'rack'})
@@ -154,7 +152,13 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
     dim_line_color = "black"
     HATCH_COLOR = "rgba(100, 100, 100, 0.5)"
     HATCH_SPACING = 20.0
-    MARGIN_DIMS = 120.0 
+    
+    # Marge dynamique pour les montants (plus large)
+    if "Montant" in panel_name:
+        MARGIN_DIMS = 250.0 
+    else:
+        MARGIN_DIMS = 120.0
+        
     TRANCHE_THICK = max(T * 1.5, 30.0)
     
     bounds_x = [0, L]
@@ -206,40 +210,60 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
         add_pro_dimension(fig, x0, y1, x1, y1, f"{cW:.0f}", -30, axis='x')
         add_pro_dimension(fig, x0, y0, x0, y1, f"{cH:.0f}", -30, axis='y')
 
-    # --- COTATION INTELLIGENTE (Y: UNIQUE GAUCHE / X: STAGGERED BAS) ---
+    # --- COTATION INTELLIGENTE PAR TYPE (GROUPEMENT FONCTIONNEL) ---
     if face_holes_list:
-        # 1. COTES Y (Gauche) - Fusion Totale (Pas de doublon)
-        # On regroupe TOUS les Y de la face en une seule liste unique
-        all_y_raw = sorted(list(set([round(h['y'], 1) for h in face_holes_list])))
-        groups = group_holes_for_dimensioning(all_y_raw)
-        
-        x_dim_base = -40 
-        prev_end = 0
-        
-        for grp in groups:
-            dist_gap = grp['start'] - prev_end
-            # On trace l'écart depuis le dernier point
-            if dist_gap > 1.0:
-                add_pro_dimension(fig, x_dim_base, prev_end, x_dim_base, grp['start'], f"{dist_gap:.0f}", -10, axis='y', line_dash='dot')
+        # 1. Groupement par Type Fonctionnel
+        holes_by_func = {}
+        for h in face_holes_list:
+            # On utilise le champ 'type' enrichi (ex: 'etagere_taquet', 'charniere_vis')
+            # On prend la première partie du type comme clé de regroupement principal
+            # ex: 'structure' regroupera 'structure_vis' et 'structure_tourillon'
+            full_type = h.get('type', 'autre')
+            func_key = full_type.split('_')[0] if '_' in full_type else full_type
             
-            if grp['type'] == 'rack':
-                span = grp['end'] - grp['start']
-                nb_inter = grp['count'] - 1
-                label = f"{nb_inter}x 32 = {span:.0f}"
-                add_pro_dimension(fig, x_dim_base, grp['start'], x_dim_base, grp['end'], label, -10, axis='y', line_dash='dot')
-                prev_end = grp['end']
-            else:
-                prev_end = grp['start']
+            # Cas spécial : on veut parfois distinguer diamètres même au sein d'une fonction
+            # Mais ici la demande est de séparer "Etagères" vs "Reste".
+            # Utilisons full_type pour être sûr de séparer taquets vs charnières.
+            key = full_type 
+            
+            if key not in holes_by_func: holes_by_func[key] = []
+            holes_by_func[key].append(h['y'])
         
-        bounds_x.append(x_dim_base - 20)
+        x_dim_start = -40 
+        layer_width = 50 
+        
+        # Ordre de tri pour l'affichage (Structure proche, Accessoires loin)
+        sorted_keys = sorted(holes_by_func.keys())
+        
+        for idx, k in enumerate(sorted_keys):
+            y_vals = holes_by_func[k]
+            current_x_dim = x_dim_start - (idx * layer_width)
+            
+            groups = group_holes_for_dimensioning(y_vals)
+            prev_end = 0
+            
+            for grp in groups:
+                dist_gap = grp['start'] - prev_end
+                if dist_gap > 1.0:
+                    add_pro_dimension(fig, current_x_dim, prev_end, current_x_dim, grp['start'], f"{dist_gap:.0f}", -10, axis='y', line_dash='dot')
+                
+                if grp['type'] == 'rack':
+                    span = grp['end'] - grp['start']
+                    nb_inter = grp['count'] - 1
+                    label = f"{nb_inter}x 32 = {span:.0f}"
+                    add_pro_dimension(fig, current_x_dim, grp['start'], current_x_dim, grp['end'], label, -10, axis='y', line_dash='dot')
+                    prev_end = grp['end']
+                else:
+                    prev_end = grp['start']
+            
+            bounds_x.append(current_x_dim - 20)
 
-        # 2. COTES X (Bas - Anti-Chevauchement)
+        # 2. COTES X (BAS)
         unique_x = sorted(list(set([round(h['x'], 1) for h in face_holes_list])))
         y_dim_base = -40
         x_levels = calculate_stagger_levels(unique_x, min_dist=45)
         
         fig.add_shape(type="line", x0=0, y0=y_dim_base, x1=L, y1=y_dim_base, line=dict(color="black", width=0.5))
-        
         for i, x_pos in enumerate(unique_x):
             fig.add_shape(type="line", x0=x_pos, y0=0, x1=x_pos, y1=y_dim_base, line=dict(color="black", width=0.5, dash='dot'))
             fig.add_shape(type="line", x0=x_pos, y0=y_dim_base-3, x1=x_pos, y1=y_dim_base+3, line=dict(color="black", width=1.2))
@@ -248,7 +272,7 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
             fig.add_annotation(x=x_pos, y=text_y, text=f"{x_pos:.0f}", showarrow=False, font=dict(size=10, color="black"), xanchor="center", yanchor="middle")
             bounds_y.append(text_y)
 
-    # --- DESSIN DES TROUS ---
+    # --- TROUS ---
     annotated_types = set()
     existing_labels = [] 
     for h in face_holes_list:
@@ -257,13 +281,11 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
         r = 4.0
         try: r = float(re.findall(r"[\d\.]+", diam_str)[0])/2
         except: pass
-        fill = "black" if h['type']=='vis' else "white"
+        fill = "black" if 'vis' in h.get('type', '') else "white"
         fig.add_shape(type="circle", x0=x-r, y0=y-r, x1=x+r, y1=y+r, line_color="black", fillcolor=fill, layer="above")
-        
         type_key = f"{h['type']}_{diam_str}"
         if type_key not in annotated_types:
             ax, ay, final_pos = get_smart_label_pos(x, y, r, existing_labels)
-            # FLÈCHE PLUS FINE (arrowwidth=1)
             fig.add_annotation(x=x, y=y, text=f"<b>{diam_str}</b>", showarrow=True, arrowwidth=1, arrowhead=2, ax=ax, ay=ay, font=dict(size=12, color="black"), bgcolor="white", bordercolor="black")
             annotated_types.add(type_key)
             existing_labels.append(final_pos)
