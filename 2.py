@@ -1,4 +1,4 @@
-# Contenu de app.py
+# Contenu de app.py (anciennement 2.py)
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
@@ -41,7 +41,7 @@ def get_automatic_edge_banding(part_name):
     else: return True, True, True, True
 
 # ==============================================================================
-# LOGIQUE DE CALCUL CENTRALISÉE
+# LOGIQUE DE CALCUL CENTRALISÉE (CORRIGÉE POUR ÉTAGÈRES)
 # ==============================================================================
 def calculate_all_project_parts():
     all_parts = []
@@ -112,6 +112,41 @@ def calculate_all_project_parts():
             cav, car, cg, cd = get_automatic_edge_banding("Tiroir Dos")
             # Épaisseur forcée à 16mm pour Dos
             all_parts.append({"Lettre": f"C{i}-TD", "Référence Pièce": f"Tiroir Dos (C{i})", "Matière": cabinet.get('material_body', 'Matière Corps'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": fixed_back_h, "Largeur (mm)": dims['L_raw']-2*t_lr-40, "Epaisseur": 16.0, "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": ""})
+            
+        # 4. Étagères (Correction ici : Ajout au tableau et calcul des dimensions)
+        if 'shelves' in cabinet:
+            for s_idx, s in enumerate(cabinet['shelves']):
+                s_type = s.get('shelf_type', 'mobile')
+                s_th = float(s.get('thickness', 19.0))
+                
+                # Calcul Dimensions
+                # Profondeur : Retrait standard de 10mm pour portes/devanture
+                dim_W = dims['W_raw'] - 10.0
+                
+                # Longueur (Largeur dans le meuble)
+                if s_type == 'fixe':
+                    # Fixe : Doit faire exactement la largeur interne (assemblage structurel)
+                    dim_L = L_traverse 
+                else:
+                    # Mobile : Doit avoir du jeu (2mm total -> 1mm par coté)
+                    dim_L = L_traverse - 2.0
+                
+                # **CRUCIAL**: Remplir le cache pour que l'affichage des plans (plus bas) ne prenne pas (100,100)
+                shelf_dims_cache[f"C{i}_S{s_idx}"] = (dim_L, dim_W)
+                
+                cav, car, cg, cd = get_automatic_edge_banding("Etagère")
+                all_parts.append({
+                    "Lettre": f"C{i}-E{s_idx+1}",
+                    "Référence Pièce": f"Etagère {s_type.capitalize()} (C{i})",
+                    "Matière": s.get('material', 'Matière Étagère'),
+                    "Caisson": f"C{i}",
+                    "Qté": 1,
+                    "Longueur (mm)": dim_L,
+                    "Largeur (mm)": dim_W,
+                    "Epaisseur": s_th,
+                    "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd,
+                    "Usinage": "Taquets" if s_type == 'mobile' else "Fixe"
+                })
             
     return all_parts, shelf_dims_cache
 
