@@ -5,7 +5,6 @@ import base64
 import os
 import io
 
-# --- GESTION ROBUSTE DES IMPORTS IMAGE ---
 try:
     from PIL import Image
 except ImportError:
@@ -17,16 +16,12 @@ if 'Image' in locals():
         script_dir = os.path.dirname(os.path.abspath(__file__))
         candidates.append(os.path.join(script_dir, filename))
         candidates.append(os.path.join(os.path.dirname(script_dir), filename))
-        
         final_path = None
         for path in candidates:
             if os.path.exists(path):
                 final_path = path
                 break
-        
-        if not final_path:
-            return None
-            
+        if not final_path: return None
         try:
             img = Image.open(final_path)
             output_buffer = io.BytesIO()
@@ -34,10 +29,8 @@ if 'Image' in locals():
             encoded = base64.b64encode(output_buffer.getvalue()).decode()
             return f"data:image/png;base64,{encoded}"
         except Exception as e:
-            print(f"Erreur chargement image: {e}")
             return None
 
-# --- FONCTIONS UTILITAIRES ---
 def create_hatch_lines(x0, y0, x1, y1, density=20):
     lines_x, lines_y = [], []
     xmin, xmax = min(x0, x1), max(x0, x1)
@@ -81,10 +74,8 @@ def add_pro_dimension(fig, x0, y0, x1, y1, text_val, offset_dist, axis='x', colo
     ext_overshoot = 5
     text_font = dict(color="black", size=font_size, family="Arial") 
     text_bg = "white"
-
     if xanchor is None: xanchor = 'center'
     if yanchor is None: yanchor = 'middle'
-
     if axis == 'x':
         y_dim = y0 + offset_dist if offset_dist != 0 else y0
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x0, y1=y_dim + (np.sign(offset_dist)*ext_overshoot), line=dict(color=color, width=0.5, dash=line_dash))
@@ -94,7 +85,6 @@ def add_pro_dimension(fig, x0, y0, x1, y1, text_val, offset_dist, axis='x', colo
         fig.add_shape(type="line", x0=x1, y0=y_dim-tick_len, x1=x1, y1=y_dim+tick_len, line=dict(color=color, width=1.2, dash='solid'))
         text_y_pos = y_dim + (np.sign(offset_dist) * 15)
         fig.add_annotation(x=(x0+x1)/2, y=text_y_pos, text=str(text_val), showarrow=False, font=text_font, bgcolor=text_bg, yanchor=yanchor, xanchor=xanchor)
-        
     elif axis == 'y':
         x_dim = x0 + offset_dist
         fig.add_shape(type="line", x0=x0, y0=y0, x1=x_dim + (np.sign(offset_dist)*ext_overshoot), y1=y0, line=dict(color=color, width=0.5, dash=line_dash))
@@ -153,21 +143,16 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
     HATCH_COLOR = "rgba(100, 100, 100, 0.5)"
     HATCH_SPACING = 20.0
     
-    # Marge dynamique pour les montants (plus large)
-    if "Montant" in panel_name:
-        MARGIN_DIMS = 250.0 
-    else:
-        MARGIN_DIMS = 120.0
+    if "Montant" in panel_name: MARGIN_DIMS = 250.0 
+    else: MARGIN_DIMS = 120.0
         
     TRANCHE_THICK = max(T * 1.5, 30.0)
     
     bounds_x = [0, L]
     bounds_y = [0, W]
     
-    # --- DESSIN PANNEAU ---
     fig.add_shape(type="rect", x0=0, y0=0, x1=L, y1=W, line=dict(color=line_color, width=1.5), fillcolor="white", layer="below")
     
-    # --- TRANCHES ---
     def draw_tranche(tx, ty, hatch_key):
         fig.add_trace(go.Scatter(x=tx, y=ty, fill="toself", fillcolor="#f9f9f9", line=dict(color=line_color, width=1), hoverinfo="none", showlegend=False, mode='lines'))
         if chants.get(hatch_key):
@@ -187,7 +172,6 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
     bounds_y.extend([y_tb_1, y_th_1])
     bounds_x.extend([x_tg_1, x_td_1])
 
-    # --- COTES GLOBALES ---
     add_pro_dimension(fig, L+20, y_tb_0, L+20, y_tb_1, f"{T:.0f}", 20, axis='y', xanchor='center', yanchor='middle')
     add_pro_dimension(fig, L+20, y_th_0, L+20, y_th_1, f"{T:.0f}", 20, axis='y', xanchor='center', yanchor='middle')
     add_pro_dimension(fig, x_tg_0, W+20, x_tg_1, W+20, f"{T:.0f}", 20, axis='x', xanchor='center', yanchor='middle')
@@ -200,7 +184,6 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
     bounds_x.append(-dist_global - 50)
     bounds_y.append(W + dist_global + 50)
 
-    # --- DÉCOUPES ---
     if center_cutout_props:
         cW, cH = center_cutout_props['width'], center_cutout_props['height']
         cOff = center_cutout_props['offset_top']
@@ -210,43 +193,27 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
         add_pro_dimension(fig, x0, y1, x1, y1, f"{cW:.0f}", -30, axis='x')
         add_pro_dimension(fig, x0, y0, x0, y1, f"{cH:.0f}", -30, axis='y')
 
-    # --- COTATION INTELLIGENTE PAR TYPE (GROUPEMENT FONCTIONNEL) ---
     if face_holes_list:
-        # 1. Groupement par Type Fonctionnel
         holes_by_func = {}
         for h in face_holes_list:
-            # On utilise le champ 'type' enrichi (ex: 'etagere_taquet', 'charniere_vis')
-            # On prend la première partie du type comme clé de regroupement principal
-            # ex: 'structure' regroupera 'structure_vis' et 'structure_tourillon'
             full_type = h.get('type', 'autre')
-            func_key = full_type.split('_')[0] if '_' in full_type else full_type
-            
-            # Cas spécial : on veut parfois distinguer diamètres même au sein d'une fonction
-            # Mais ici la demande est de séparer "Etagères" vs "Reste".
-            # Utilisons full_type pour être sûr de séparer taquets vs charnières.
             key = full_type 
-            
             if key not in holes_by_func: holes_by_func[key] = []
             holes_by_func[key].append(h['y'])
         
         x_dim_start = -40 
         layer_width = 50 
-        
-        # Ordre de tri pour l'affichage (Structure proche, Accessoires loin)
         sorted_keys = sorted(holes_by_func.keys())
         
         for idx, k in enumerate(sorted_keys):
             y_vals = holes_by_func[k]
             current_x_dim = x_dim_start - (idx * layer_width)
-            
             groups = group_holes_for_dimensioning(y_vals)
             prev_end = 0
-            
             for grp in groups:
                 dist_gap = grp['start'] - prev_end
                 if dist_gap > 1.0:
                     add_pro_dimension(fig, current_x_dim, prev_end, current_x_dim, grp['start'], f"{dist_gap:.0f}", -10, axis='y', line_dash='dot')
-                
                 if grp['type'] == 'rack':
                     span = grp['end'] - grp['start']
                     nb_inter = grp['count'] - 1
@@ -255,10 +222,8 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
                     prev_end = grp['end']
                 else:
                     prev_end = grp['start']
-            
             bounds_x.append(current_x_dim - 20)
 
-        # 2. COTES X (BAS)
         unique_x = sorted(list(set([round(h['x'], 1) for h in face_holes_list])))
         y_dim_base = -40
         x_levels = calculate_stagger_levels(unique_x, min_dist=45)
@@ -272,7 +237,6 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
             fig.add_annotation(x=x_pos, y=text_y, text=f"{x_pos:.0f}", showarrow=False, font=dict(size=10, color="black"), xanchor="center", yanchor="middle")
             bounds_y.append(text_y)
 
-    # --- TROUS ---
     annotated_types = set()
     existing_labels = [] 
     for h in face_holes_list:
@@ -290,7 +254,7 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
             annotated_types.add(type_key)
             existing_labels.append(final_pos)
 
-    # --- COTES TRANCHES ---
+    # --- TROUS DE TRANCHE (Traverses & Etagères Fixes) ---
     if tranche_cote_holes_list:
         y_locs = sorted(list(set([round(h['y'], 1) for h in tranche_cote_holes_list])))
         prev_y = 0
@@ -299,11 +263,39 @@ def draw_machining_view_pro_final(panel_name, L, W, T, unit_str, project_info,
             if dist > 0:
                 add_pro_dimension(fig, x_td_1, prev_y, x_td_1, y_pos, f"{dist:.0f}", 40, axis='y', line_dash='dot')
             prev_y = y_pos
+            
+        annotated_tranche_types = set()
+        
         for h in tranche_cote_holes_list:
-            gx, dx = x_tg_0 - TRANCHE_THICK/2, x_td_0 + TRANCHE_THICK/2
-            fig.add_trace(go.Scatter(x=[gx, dx], y=[h['y'], h['y']], mode='markers', marker=dict(color='black', size=4), showlegend=False))
+            y = h['y']
+            gx = (x_tg_0 + x_tg_1) / 2
+            dx = (x_td_0 + x_td_1) / 2
+            
+            diam_str = h.get('diam_str', '⌀8')
+            r = 3.0
+            try: r = float(re.findall(r"[\d\.]+", diam_str)[0])/2
+            except: pass
+            
+            fill = "black" if 'vis' in h.get('type', '') else "white"
+            
+            fig.add_shape(type="circle", x0=gx-r, y0=y-r, x1=gx+r, y1=y+r, line_color="black", fillcolor=fill, layer="above")
+            fig.add_shape(type="circle", x0=dx-r, y0=y-r, x1=dx+r, y1=y+r, line_color="black", fillcolor=fill, layer="above")
+            
+            type_key = f"tranche_{h.get('type','unk')}_{diam_str}"
+            if type_key not in annotated_tranche_types:
+                # STYLE "PRO" APPLIQUÉ ICI (Cadre + Flèche Fine)
+                fig.add_annotation(
+                    x=gx, y=y, 
+                    text=f"<b>{diam_str}</b>", 
+                    showarrow=True, 
+                    arrowwidth=1, arrowhead=2,
+                    ax=-40, ay=0, 
+                    font=dict(size=12, color="black"), 
+                    bgcolor="white", 
+                    bordercolor="black"
+                )
+                annotated_tranche_types.add(type_key)
 
-    # --- CARTOUCHE PAPER SPACE ---
     CART_Y_MIN = 0.01
     CART_Y_MAX = 0.09 
     CART_BG_COLOR = "#f9f9f0"
