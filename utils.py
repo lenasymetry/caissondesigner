@@ -1,4 +1,3 @@
-# Contenu de utils.py
 import streamlit as st
 import datetime
 import re
@@ -10,21 +9,18 @@ def get_material_library():
 def get_default_debit_data():
     """Retourne la liste de pièces par défaut avec les CHANTS FORCÉS selon vos règles."""
     return [
-        # Traverse : Avant/Arrière = True, Gauche/Droit = False (bouts usinés)
         {"Lettre": "A", "Référence Pièce": "Traverse Bas (Tb)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
         {"Lettre": "B", "Référence Pièce": "Traverse Haut (Th)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": "Tourillons Tranches Côtés"},
-        # Montants : Champs Partout (4 côtés)
         {"Lettre": "C", "Référence Pièce": "Montant Gauche (Mg)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": True, "Chant Droit": True, "Usinage": "Vis/Tourillons Faces H&B"},
         {"Lettre": "D", "Référence Pièce": "Montant Droit (Md)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": True, "Chant Arrière": True, "Largeur (mm)": 0.0, "Chant Gauche": True, "Chant Droit": True, "Usinage": "Vis/Tourillons Faces H&B"},
-        # Fond : Pas de chant par défaut
         {"Lettre": "E", "Référence Pièce": "Fond (F)", "Qté": 1, "Longueur (mm)": 0.0, "Chant Avant": False, "Chant Arrière": False, "Largeur (mm)": 0.0, "Chant Gauche": False, "Chant Droit": False, "Usinage": ""},
     ]
 
 def get_default_dims():
-    """Retourne les dimensions par défaut pour un NOUVEAU caisson."""
+    """Retourne les dimensions par défaut pour un NOUVEAU caisson (CORRECTION 19mm)."""
     return {
         'L_raw': 500.0, 'W_raw': 300.0, 'H_raw': 400.0,
-        't_lr_raw': 18.0, 't_fb_raw': 18.0, 't_tb_raw': 18.0
+        't_lr_raw': 19.0, 't_fb_raw': 19.0, 't_tb_raw': 19.0 
     }
 
 def get_default_door_props():
@@ -34,7 +30,7 @@ def get_default_door_props():
         'door_type': 'single',
         'door_opening': 'right', 
         'door_gap': 2.0, 
-        'door_thickness': 18.0,
+        'door_thickness': 19.0,
         'door_model': 'standard',
         'material': 'Matière Porte'
     }
@@ -61,7 +57,7 @@ def get_default_shelf_props():
         'thickness': 19.0,
         'material': 'Matière Étagère',
         'shelf_type': 'mobile', 
-        'mobile_machining_type': 'full_height', # 'full_height', '4_holes', 'custom'
+        'mobile_machining_type': 'full_height', 
         'custom_holes_above': 0,
         'custom_holes_below': 0
     }
@@ -74,7 +70,6 @@ def initialize_session_state():
     st.session_state.setdefault('audio_recorder_key', 'audio_key_1')
     st.session_state.setdefault('unit_select', 'mm')
 
-    # Infos Globales du Projet
     st.session_state.setdefault('project_name', "Nouveau Projet")
     st.session_state.setdefault('corps_meuble', "Caisson 1")
     st.session_state.setdefault('quantity', 1)
@@ -86,7 +81,6 @@ def initialize_session_state():
     st.session_state.setdefault('chant_mm', "1mm")
     st.session_state.setdefault('decor_chant', "ESSENTIAL OAK NATUREL")
     
-    # Propriétés des pieds
     st.session_state.setdefault('has_feet', False)
     st.session_state.setdefault('foot_height', 80.0) 
     st.session_state.setdefault('foot_diameter', 30.0)
