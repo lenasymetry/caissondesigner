@@ -1,4 +1,3 @@
-# Contenu de app.py (anciennement 2.py)
 import streamlit as st
 import plotly.graph_objects as go
 import pandas as pd
@@ -8,7 +7,6 @@ import math
 import copy
 import hashlib 
 
-# --- IMPORTATIONS MODULAIRES ---
 from utils import initialize_session_state, calculate_hole_positions
 from geometry_helpers import cuboid_mesh_for, cylinder_mesh_for
 from excel_export import create_styled_excel
@@ -24,13 +22,9 @@ from state_manager import (
 )
 from export_manager import generate_stacked_html_plans
 
-# --- CONFIGURATION ---
 st.set_page_config(page_title="Caisson Designer", layout="wide")
 initialize_session_state()
 
-# ==============================================================================
-# LOGIQUE MÉTIER CHANTS
-# ==============================================================================
 def get_automatic_edge_banding(part_name):
     name = part_name.lower()
     if "etagère" in name or "etagere" in name: return True, False, False, False
@@ -40,9 +34,6 @@ def get_automatic_edge_banding(part_name):
     elif "traverse" in name: return True, True, False, False
     else: return True, True, True, True
 
-# ==============================================================================
-# LOGIQUE DE CALCUL CENTRALISÉE (CORRIGÉE POUR ÉTAGÈRES)
-# ==============================================================================
 def calculate_all_project_parts():
     all_parts = []
     lettre_code = 65 
@@ -100,8 +91,6 @@ def calculate_all_project_parts():
         # 3. Tiroir
         if cabinet['drawer_props']['has_drawer']:
             drp = cabinet['drawer_props']
-            
-            # Gestion des types N, M, K, D
             tech_type = drp.get('drawer_tech_type', 'K')
             back_height_map = {'N': 69.0, 'M': 84.0, 'K': 116.0, 'D': 199.0}
             fixed_back_h = back_height_map.get(tech_type, 116.0)
@@ -110,31 +99,26 @@ def calculate_all_project_parts():
             all_parts.append({"Lettre": f"C{i}-TF", "Référence Pièce": f"Façade Tiroir (C{i})", "Matière": drp.get('material', 'Matière Tiroir'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": drp['drawer_face_H_raw'], "Largeur (mm)": dims['L_raw'] - (2 * drp['drawer_gap']), "Epaisseur": drp.get('drawer_face_thickness', 19.0), "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": "CF plan"})
             
             cav, car, cg, cd = get_automatic_edge_banding("Tiroir Dos")
-            # Épaisseur forcée à 16mm pour Dos
             all_parts.append({"Lettre": f"C{i}-TD", "Référence Pièce": f"Tiroir Dos (C{i})", "Matière": cabinet.get('material_body', 'Matière Corps'), "Caisson": f"C{i}", "Qté": 1, "Longueur (mm)": fixed_back_h, "Largeur (mm)": dims['L_raw']-2*t_lr-40, "Epaisseur": 16.0, "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd, "Usinage": ""})
             
-        # 4. Étagères (Correction ici : Ajout au tableau et calcul des dimensions)
+        # 4. Étagères (CORRIGÉ ICI POUR USINAGE)
         if 'shelves' in cabinet:
             for s_idx, s in enumerate(cabinet['shelves']):
                 s_type = s.get('shelf_type', 'mobile')
                 s_th = float(s.get('thickness', 19.0))
-                
-                # Calcul Dimensions
-                # Profondeur : Retrait standard de 10mm pour portes/devanture
                 dim_W = dims['W_raw'] - 10.0
-                
-                # Longueur (Largeur dans le meuble)
                 if s_type == 'fixe':
-                    # Fixe : Doit faire exactement la largeur interne (assemblage structurel)
                     dim_L = L_traverse 
                 else:
-                    # Mobile : Doit avoir du jeu (2mm total -> 1mm par coté)
                     dim_L = L_traverse - 2.0
                 
-                # **CRUCIAL**: Remplir le cache pour que l'affichage des plans (plus bas) ne prenne pas (100,100)
                 shelf_dims_cache[f"C{i}_S{s_idx}"] = (dim_L, dim_W)
                 
                 cav, car, cg, cd = get_automatic_edge_banding("Etagère")
+                
+                # --- MODIFICATION DEMANDÉE : USINAGE ---
+                usinage_txt = "" if s_type == 'mobile' else "CF plan"
+                
                 all_parts.append({
                     "Lettre": f"C{i}-E{s_idx+1}",
                     "Référence Pièce": f"Etagère {s_type.capitalize()} (C{i})",
@@ -145,20 +129,15 @@ def calculate_all_project_parts():
                     "Largeur (mm)": dim_W,
                     "Epaisseur": s_th,
                     "Chant Avant": cav, "Chant Arrière": car, "Chant Gauche": cg, "Chant Droit": cd,
-                    "Usinage": "Taquets" if s_type == 'mobile' else "Fixe"
+                    "Usinage": usinage_txt
                 })
             
     return all_parts, shelf_dims_cache
-
-# ==============================================================================
-# INTERFACE UTILISATEUR
-# ==============================================================================
 
 st.title("Caisson Designer 🛠️")
 col1, col2 = st.columns([1, 2])
 selected_cab = get_selected_cabinet()
 
-# --- COLONNE 1 ---
 with col1:
     st.header("Éditeur de Scène")
     tab_assembly, tab_edit = st.tabs(["🏗️ Assemblage & Fichiers", "✏️ Éditeur de Caisson"])
@@ -263,7 +242,6 @@ with col1:
                     st.button("Ajouter une étagère au Caisson", key=f"add_shelf_{idx}", on_click=add_shelf_callback)
                     if 'shelves' in selected_cab:
                         for i, s in enumerate(selected_cab['shelves']):
-                            # SÉCURITÉ ICI : .get
                             s_type = s.get('shelf_type', 'mobile')
                             with st.expander(f"⚙️ Étagère {i+1} ({'Mobile' if s_type=='mobile' else 'Fixe'})"):
                                 st.selectbox("Type", options=['mobile', 'fixe'], index=0 if s_type=='mobile' else 1, format_func=lambda x: 'Mobile (Taquets)' if x=='mobile' else 'Fixe', key=f"shelf_t_{idx}_{i}", on_change=lambda x=i: update_shelf_prop(x, 'shelf_type'))
@@ -282,18 +260,13 @@ with col1:
                     df = pd.DataFrame(selected_cab['debit_data'])
                     st.data_editor(df, key=f"editor_{idx}", hide_index=True)
 
-# --- CALCUL CENTRALISÉ ---
 all_calculated_parts, shelf_dims_cache = calculate_all_project_parts()
 
-# --- COLONNE 2 ---
 with col2:
-    
-    # A. DÉTECTION DE COLLISIONS
     sel_idx = st.session_state.get('selected_cabinet_index')
     if sel_idx is None and st.session_state['scene_cabinets']: sel_idx = 0
     cab_for_check = st.session_state['scene_cabinets'][sel_idx] if sel_idx is not None and 0 <= sel_idx < len(st.session_state['scene_cabinets']) else None
     
-    # 1. Effectuer la détection
     collisions = []
     if cab_for_check:
         dims = cab_for_check['dims']
@@ -309,7 +282,6 @@ with col2:
         
         if 'shelves' in selected_cab:
             for s in selected_cab['shelves']:
-                # SÉCURITÉ ICI : .get
                 s_type = s.get('shelf_type', 'mobile')
                 if s_type == 'fixe':
                     yc_val = t_tb + s['height'] + s['thickness']/2.0 
@@ -321,7 +293,6 @@ with col2:
         
         collisions = detect_collisions(check_holes_mg, selected_cab.get('shelves', []), panel_name=f"Caisson {sel_idx}")
 
-    # 2. Affichage de l'alerte/popup
     collision_state_key = f'ignore_collision_state_{sel_idx}'
 
     import hashlib
@@ -332,68 +303,42 @@ with col2:
 
     if collisions and not st.session_state.get(collision_state_key, False):
         st.toast(f"⚠️ CONFLIT DÉTECTÉ !", icon="🚨")
-        
-        # ALERTE "EXPANDER" FLOTTANTE ROUGE
         with st.expander("🚨 PROBLÈME D'USINAGE (Action requise)", expanded=True):
             st.error("Chevauchement d'usinage détecté.")
-            
-            # Affichage simplifié (juste le premier conflit pour ne pas saturer)
-            if collisions:
-                 st.caption(f"📍 {collisions[0]['msg']}")
-            
+            if collisions: st.caption(f"📍 {collisions[0]['msg']}")
             c1, c2, c3 = st.columns(3)
-            
-            # FONCTION DE DÉPLACEMENT INTELLIGENT (Calcul de la distance de saut)
             def move_shelf_smart(direction_mult):
                 if 'shelves' in st.session_state['scene_cabinets'][sel_idx] and st.session_state['scene_cabinets'][sel_idx]['shelves']:
-                    # On détermine la hauteur du bloc à sauter
-                    # Par défaut pour 5 trous : ~128mm + marge = 150mm
-                    # Pour custom : (N+M)*32 + marge
-                    # Pour full_height : On ne peut pas vraiment sauter, on décale de 32mm
-                    
                     shelf = st.session_state['scene_cabinets'][sel_idx]['shelves'][0]
-                    
-                    # Calcul de la hauteur du pattern
                     pattern_height = 32.0 
-                    # SÉCURITÉ ICI
                     s_type = shelf.get('shelf_type', 'mobile')
                     if s_type == 'mobile':
                         m_type = shelf.get('mobile_machining_type', 'full_height')
-                        if m_type == '5_holes_centered':
-                            pattern_height = 128.0 # 4 entraxes de 32
+                        if m_type == '5_holes_centered': pattern_height = 128.0
                         elif m_type == 'custom_n_m':
                             n = shelf.get('custom_holes_above', 0)
                             m = shelf.get('custom_holes_below', 0)
                             pattern_height = (n + m) * 32.0
-                    
-                    # Distance de saut = Hauteur du pattern + Marge de sécurité (32mm)
                     jump_dist = pattern_height + 32.0
-                    
                     st.session_state['scene_cabinets'][sel_idx]['shelves'][0]['height'] += (jump_dist * direction_mult)
                     st.session_state[collision_state_key] = False 
-            
             c1.button("⬆️", on_click=move_shelf_smart, args=(1.0,), use_container_width=True, help="Déplacer au-dessus de la zone de conflit")
             c2.button("⬇️", on_click=move_shelf_smart, args=(-1.0,), use_container_width=True, help="Déplacer au-dessous de la zone de conflit")
-            
             if c3.button("Ignorer", use_container_width=True, type="primary"):
                 st.session_state[collision_state_key] = True
                 st.rerun()
-        
         st.stop()
 
-
-    # B. 3D VIEW
     st.header("Prévisualisation 3D")
     fig3d = go.Figure()
     scene = st.session_state['scene_cabinets']
     unit_factor = {"mm":0.001,"cm":0.01,"m":1.0}[st.session_state.unit_select]
     abs_origins = calculate_origins_recursively(st.session_state.scene_cabinets, unit_factor)
     
-    # COULEURS 3D (Beige Bois & Contraste)
-    BODY_COLOR = "#D6C098"      # Bois Clair
-    ACCESSORY_COLOR = "#B8A078" # Beige plus foncé (Portes/Tiroirs)
-    BODY_OPACITY = 1.0          # Opaque
-    ACCESSORY_OPACITY = 1.0     # Opaque
+    BODY_COLOR = "#D6C098"
+    ACCESSORY_COLOR = "#B8A078"
+    BODY_OPACITY = 1.0
+    ACCESSORY_OPACITY = 1.0
     
     if not st.session_state['scene_cabinets']:
         st.info("La scène est vide.")
@@ -402,36 +347,25 @@ with col2:
             o = abs_origins[i]; d = cab['dims']; L, W, H = d['L_raw']*unit_factor, d['W_raw']*unit_factor, d['H_raw']*unit_factor
             tl, tb, tt = d['t_lr_raw']*unit_factor, d['t_fb_raw']*unit_factor, d['t_tb_raw']*unit_factor
             
-            # Corps
             fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             fig3d.add_trace(cuboid_mesh_for(L-2*tl, W, tt, (o[0]+tl, o[1], o[2]+H-tt), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0], o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             fig3d.add_trace(cuboid_mesh_for(tl, W, H, (o[0]+L-tl, o[1], o[2]), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             fig3d.add_trace(cuboid_mesh_for(L-2*tl, tb, H-2*tt, (o[0]+tl, o[1]+W-tb, o[2]+tt), color=BODY_COLOR, opacity=BODY_OPACITY, showlegend=False))
             
-            # Porte
             if cab['door_props']['has_door']:
                 dp = cab['door_props']; gap = dp['door_gap'] * unit_factor; thk = dp.get('door_thickness', 19.0) * unit_factor; dy = o[1] - thk
                 dH = H + st.session_state.foot_height*unit_factor - gap if dp.get('door_model')=='floor_length' and (i==0) and st.session_state.has_feet else H - 2*gap
                 dz = o[2] + (gap * (1.0 if dp.get('door_model')=='standard' else 0.0))
-                
                 rot_angle = -45 if dp.get('door_opening')=='right' else 45
-                
                 if dp.get('door_type') == 'single':
                     pivot_x = o[0] + L - gap if dp.get('door_opening')=='right' else o[0] + gap
-                    fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, dH, (o[0]+gap, dy, dz), 
-                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte {i}",
-                                                    rotation_angle=rot_angle, rotation_axis='z', rotation_pivot=(pivot_x, dy, dz)))
+                    fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, dH, (o[0]+gap, dy, dz), color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte {i}", rotation_angle=rot_angle, rotation_axis='z', rotation_pivot=(pivot_x, dy, dz)))
                 else:
                     dl_half = (L-2*gap)/2; pivot_g = o[0] + gap; pivot_d = o[0] + L - gap
-                    fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+gap, dy, dz), 
-                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte G {i}",
-                                                    rotation_angle=45, rotation_axis='z', rotation_pivot=(pivot_g, dy, dz)))
-                    fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+L-gap-dl_half, dy, dz), 
-                                                    color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte D {i}",
-                                                    rotation_angle=-45, rotation_axis='z', rotation_pivot=(pivot_d, dy, dz)))
+                    fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+gap, dy, dz), color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte G {i}", rotation_angle=45, rotation_axis='z', rotation_pivot=(pivot_g, dy, dz)))
+                    fig3d.add_trace(cuboid_mesh_for(dl_half, thk, dH, (o[0]+L-gap-dl_half, dy, dz), color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Porte D {i}", rotation_angle=-45, rotation_axis='z', rotation_pivot=(pivot_d, dy, dz)))
 
-            # Tiroir
             if cab['drawer_props']['has_drawer']:
                 drp = cab['drawer_props']; gap = drp['drawer_gap'] * unit_factor; thk = drp.get('drawer_face_thickness', 19.0) * unit_factor
                 fig3d.add_trace(cuboid_mesh_for(L-2*gap, thk, drp['drawer_face_H_raw']*unit_factor, (o[0]+gap, o[1]-thk, o[2]+drp['drawer_bottom_offset']*unit_factor), color=ACCESSORY_COLOR, opacity=ACCESSORY_OPACITY, name=f"Tiroir {i}"))
@@ -449,30 +383,17 @@ with col2:
                 for y in [min_W+0.05, max_W-0.05]:
                     fig3d.add_trace(cylinder_mesh_for((x, y, -fh), fh, 0.02, color='#333', showlegend=False))
 
-    fig3d.update_layout(
-        scene=dict(
-            aspectmode='data',
-            xaxis=dict(visible=True, showgrid=True, title="X"), 
-            yaxis=dict(visible=True, showgrid=True, title="Y"), 
-            zaxis=dict(visible=True, showgrid=True, title="Z"),
-            camera=dict(eye=dict(x=1.6, y=1.6, z=1.4))
-        ),
-        margin=dict(l=0,r=0,t=0,b=0), 
-        uirevision='constant'
-    ) 
+    fig3d.update_layout(scene=dict(aspectmode='data', xaxis=dict(visible=True, showgrid=True, title="X"), yaxis=dict(visible=True, showgrid=True, title="Y"), zaxis=dict(visible=True, showgrid=True, title="Z"), camera=dict(eye=dict(x=1.6, y=1.6, z=1.4))), margin=dict(l=0,r=0,t=0,b=0), uirevision='constant') 
     st.plotly_chart(fig3d, use_container_width=True)
     
     st.markdown("---")
     st.subheader("📤 Exportation")
     if st.session_state['scene_cabinets']:
         html_data, html_ok = generate_stacked_html_plans(st.session_state['scene_cabinets'], list(range(len(st.session_state['scene_cabinets']))))
-        
         dl_col1, dl_col2 = st.columns([1, 1])
-        
         project_info_export = {"project_name": st.session_state.project_name, "client": st.session_state.client, "adresse_chantier": st.session_state.adresse_chantier, "ref_chantier": st.session_state.ref_chantier, "telephone": st.session_state.telephone, "date_souhaitee": st.session_state.date_souhaitee, "panneau_decor": st.session_state.panneau_decor, "chant_mm": st.session_state.chant_mm, "decor_chant": st.session_state.decor_chant, "corps_meuble": "Ensemble", "quantity": 1, "date": datetime.date.today().strftime("%Y-%m-%d")}
         save_data_export = {'project_name': st.session_state.project_name, 'scene_cabinets': st.session_state.scene_cabinets}
         xls_data = create_styled_excel(project_info_export, pd.DataFrame(all_calculated_parts), save_data_export)
-        
         if html_ok: dl_col1.download_button("📄 Télécharger Dossier Plans (HTML)", html_data, f"Dossier_{st.session_state.project_name.replace(' ', '_')}.html", "text/html", use_container_width=True)
         dl_col2.download_button("📥 Télécharger Fiche de Débit (.xlsx)", xls_data, f"Projet_{st.session_state.project_name.replace(' ', '_')}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
 
@@ -482,7 +403,6 @@ with col2:
 
     st.markdown("---")
     unit_str = st.session_state.unit_select
-    
     sel_idx = st.session_state.get('selected_cabinet_index')
     if sel_idx is None and st.session_state['scene_cabinets']: sel_idx = 0
     st.subheader(f"📋 Feuilles d'usinage (Caisson {sel_idx})")
@@ -498,7 +418,6 @@ with col2:
         ys_vis, ys_dowel = calculate_hole_positions(W_raw)
         holes_mg, holes_md = [], []
         
-        # Trous structure
         for x in ys_vis:
             holes_mg.append({'type':'vis','x':x,'y':t_tb/2,'diam_str':"⌀3"}); holes_mg.append({'type':'vis','x':x,'y':h_side-t_tb/2,'diam_str':"⌀3"})
             holes_md.append({'type':'vis','x':x,'y':t_tb/2,'diam_str':"⌀3"}); holes_md.append({'type':'vis','x':x,'y':h_side-t_tb/2,'diam_str':"⌀3"})
@@ -512,11 +431,9 @@ with col2:
         
         if 'shelves' in cab:
             for s_idx, s in enumerate(cab['shelves']):
-                # SÉCURITÉ ICI : .get
                 s_type = s.get('shelf_type', 'mobile')
                 if s_type == 'fixe':
                     yc_val = t_tb + s['height'] + s['thickness']/2.0 
-                    
                     for x in ys_vis_sf: holes_mg.append({'type':'vis','x':x+10.0,'y':yc_val,'diam_str':"⌀3"})
                     for x in ys_dowel_sf: holes_mg.append({'type':'tourillon','x':x+10.0,'y':yc_val,'diam_str':"⌀8/20"})
                     for x in ys_vis_sf: holes_md.append({'type':'vis','x':x,'y':yc_val,'diam_str':"⌀3"})
@@ -538,32 +455,19 @@ with col2:
                  else: 
                      holes_md.append({'type':'vis','x':20.0,'y':y,'diam_str':"⌀5/11.5"}); holes_md.append({'type':'vis','x':52.0,'y':y,'diam_str':"⌀5/11.5"})
 
-        # --- NOUVEAU : TROUS DE COULISSES SUR LES MONTANTS (Selon largeur et type) ---
         if cab['drawer_props']['has_drawer']:
             drp = cab['drawer_props']
             tech_type = drp.get('drawer_tech_type', 'K')
-            
-            # Formule Y = épaisseur montant (t_tb) + 33mm + Offset
             y_slide = t_tb + 33.0 + drp['drawer_bottom_offset']
-            
             x_slide_holes = []
             wr = W_raw
-            
-            # Priorité : Si > 643mm (Overrides)
-            if wr > 643:
-                x_slide_holes = [19, 37, 133, 261, 293, 389, 421, 549]
+            if wr > 643: x_slide_holes = [19, 37, 133, 261, 293, 389, 421, 549]
             else:
-                # Logique par ranges
-                # TYPE N (Specifique)
                 if tech_type == 'N':
                     if 403 < wr < 452: x_slide_holes = [19, 37, 133, 165, 229, 325]
                     elif 453 < wr < 502: x_slide_holes = [19, 37, 133, 165, 261, 357]
                     elif 503 < wr < 552: x_slide_holes = [19, 37, 133, 261, 293, 453]
                     elif 553 < wr < 602: x_slide_holes = [19, 37, 133, 261, 293, 453]
-                    else:
-                        pass 
-
-                # TYPE D, K, M (et fallback N)
                 if not x_slide_holes:
                     if 273 < wr < 302: x_slide_holes = [19, 37, 133, 261]
                     elif 303 < wr < 352: x_slide_holes = [19, 37, 133, 165, 261]
@@ -575,10 +479,7 @@ with col2:
                     elif 603 < wr < 652: x_slide_holes = [19, 37, 133, 261, 293, 325, 357, 517]
 
             for x_s in x_slide_holes:
-                # Montant Gauche (Reference Avant = 0)
                 holes_mg.append({'type': 'vis', 'x': x_s, 'y': y_slide, 'diam_str': "⌀5/12"})
-                # Montant Droit (Reference Avant = Opposé si miroir)
-                # ICI CORRECTION : Inversion de l'axe X pour le montant droit
                 holes_md.append({'type': 'vis', 'x': W_mont - x_s, 'y': y_slide, 'diam_str': "⌀5/12"})
 
         proj = {"project_name": st.session_state.project_name, "corps_meuble": f"Caisson {sel_idx}", "quantity": 1, "date": ""}
@@ -613,24 +514,9 @@ with col2:
             f_holes = [] 
             dr_H = drp['drawer_face_H_raw']
             dr_L = L_raw - (2 * drp['drawer_gap'])
-            
             tech_type = drp.get('drawer_tech_type', 'K')
-            
-            # --- LOGIQUE PERÇAGE FAÇADE (Selon type) ---
-            # K: 3 trous (47.5, 79.5, 111.5)
-            # M: 2 trous (47.5, 79.5)
-            # N: 2 trous (32.5, 64.5)
-            # D: 3 trous (47.5, 79.5, 207.5)
-            
-            face_coords_map = {
-                'K': [47.5, 79.5, 111.5],
-                'M': [47.5, 79.5],
-                'N': [32.5, 64.5],
-                'D': [47.5, 79.5, 207.5]
-            }
-            
+            face_coords_map = {'K': [47.5, 79.5, 111.5], 'M': [47.5, 79.5], 'N': [32.5, 64.5], 'D': [47.5, 79.5, 207.5]}
             y_coords_face = face_coords_map.get(tech_type, [47.5, 79.5, 111.5])
-            
             for y in y_coords_face:
                 if y < dr_H:
                     f_holes.append({'type': 'tourillon', 'x': 32.5, 'y': y, 'diam_str': "⌀10/12"})
@@ -638,48 +524,28 @@ with col2:
 
             c_tf = {"Chant Avant":True, "Chant Arrière":True, "Chant Gauche":True, "Chant Droit":True}
             cutout = {'width': drp.get('drawer_handle_width', 150.0), 'height': drp.get('drawer_handle_height', 40.0), 'offset_top': drp.get('drawer_handle_offset_top', 10.0)} if drp.get('drawer_handle_type') == 'integrated_cutout' else None
-            
             st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Face (C{sel_idx}) [Type {tech_type}]", dr_L, dr_H, drp.get('drawer_face_thickness', 19.0), unit_str, proj, c_tf, f_holes, [], [], cutout), use_container_width=True)
             
-            # --- LOGIQUE PERÇAGE DOS (Selon type) ---
-            # Hauteur forcée selon type
             back_height_map = {'N': 69.0, 'M': 84.0, 'K': 116.0, 'D': 199.0}
             fixed_back_h = back_height_map.get(tech_type, 116.0)
-            
             c_td = {"Chant Avant":False, "Chant Arrière":False, "Chant Gauche":False, "Chant Droit":False}
             d_L_t = (L_raw - (2 * t_lr)) - 49.0
             d_holes_t = []
-            
-            # Coordonnées Y pour le dos (X=9mm du bord)
-            back_coords_map = {
-                'K': [30.0, 62.0, 94.0],
-                'M': [32.0, 64.0],
-                'N': [31.0, 47.0],
-                'D': [31.0, 63.0, 95.0, 159.0, 191.0]
-            }
+            back_coords_map = {'K': [30.0, 62.0, 94.0], 'M': [32.0, 64.0], 'N': [31.0, 47.0], 'D': [31.0, 63.0, 95.0, 159.0, 191.0]}
             y_coords_back = back_coords_map.get(tech_type, [30.0, 62.0, 94.0])
-            
             for dy in y_coords_back:
-                # Côté Gauche (9mm du bord)
                 d_holes_t.append({'type': 'vis', 'x': 9.0, 'y': dy, 'diam_str': "⌀2.5/3"})
-                # Côté Droit (9mm du bord)
                 d_holes_t.append({'type': 'vis', 'x': d_L_t - 9.0, 'y': dy, 'diam_str': "⌀2.5/3"})
 
-            # Le Dos
             st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Dos (C{sel_idx}) [Type {tech_type}]", d_L_t, fixed_back_h, 16.0, unit_str, proj, c_td, d_holes_t), use_container_width=True)
-            # Le Fond (Horizontal) - Epaisseur forcée à 16mm
             st.plotly_chart(draw_machining_view_pro_final(f"Tiroir-Fond (C{sel_idx})", d_L_t, W_raw - (20.0 + t_fb), 16.0, unit_str, proj, c_td), use_container_width=True)
 
         if 'shelves' in cab:
             for s_idx, s in enumerate(cab['shelves']):
                 c_eta = {"Chant Avant":True, "Chant Arrière":False, "Chant Gauche":False, "Chant Droit":False}
                 sl, sw = shelf_dims_cache.get(f"C{sel_idx}_S{s_idx}", (100,100))
-                
-                # SÉCURITÉ ICI : .get
                 s_type = s.get('shelf_type', 'mobile')
-                
                 trh = fixed_shelf_tr_draw.get(s_idx, []) if s_type == 'fixe' else []
-                
                 st.plotly_chart(draw_machining_view_pro_final(f"Etagère {s_idx+1} ({s_type})", sl, sw, s['thickness'], unit_str, proj, c_eta, [], [], trh), use_container_width=True)
 
     else:
